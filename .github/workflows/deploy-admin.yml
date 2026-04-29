@@ -8,7 +8,6 @@ on:
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
-    if: contains(toJson(github.event.commits), 'backend/')
     steps:
       - name: Deploy backend via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -25,7 +24,6 @@ jobs:
 
   deploy-frontend:
     runs-on: ubuntu-latest
-    if: contains(toJson(github.event.commits), 'frontend/')
     steps:
       - name: Deploy frontend via SSH
         uses: appleboy/ssh-action@v1.0.3
