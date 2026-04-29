@@ -8,8 +8,10 @@ const router = useRouter()
 const auth = useAuthStore()
 const collapsed = ref(false)
 
-const navItems = [{ label: 'Docker', icon: 'pi pi-box', to: '/docker' }]
-
+const navItems = [
+  { label: 'Docker', icon: 'pi pi-box', to: '/docker' },
+  { label: 'Nginx', icon: 'pi pi-server', to: '/nginx' },
+]
 function logout() {
   auth.logout()
   router.push('/login')

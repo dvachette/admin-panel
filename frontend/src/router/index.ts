@@ -23,6 +23,11 @@ const router = createRouter({
           name: 'docker',
           component: () => import('@/views/DockerView.vue'),
         },
+        {
+          path: 'nginx',
+          name: 'nginx',
+          component: () => import('@/views/NginxView.vue'),
+        },
       ],
     },
   ],
