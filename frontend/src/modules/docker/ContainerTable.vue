@@ -13,7 +13,7 @@ interface Stats {
   memPercent: number
 }
 
-// eslint-disable-next-line 
+// eslint-disable-next-line
 const props = defineProps<{
   containers: Container[]
   loading: boolean
@@ -56,7 +56,7 @@ function toggleStats(id: string) {
 }
 
 onUnmounted(() => {
-  Object.values(sseMap.value).forEach(es => es.close())
+  Object.values(sseMap.value).forEach((es) => es.close())
 })
 </script>
 
@@ -66,17 +66,28 @@ onUnmounted(() => {
     <Column field="image" header="Image" />
     <Column field="state" header="État">
       <template #body="{ data }">
-        <Tag
-          :value="data.state"
-          :severity="data.state === 'running' ? 'success' : 'secondary'"
-        />
+        <Tag :value="data.state" :severity="data.state === 'running' ? 'success' : 'secondary'" />
       </template>
     </Column>
     <Column field="status" header="Status" />
     <Column header="CPU / RAM">
       <template #body="{ data }">
         <span v-if="stats[data.id]">
-          {{ stats[data.id]!.cpu }}% · {{ formatBytes(stats[data.id]!.memUsage) }} / {{ formatBytes(stats[data.id]!.memLimit) }}
+          {{ stats[data.id]!.cpu }}% · {{ formatBytes(stats[data.id]!.memUsage) }} /
+          {{ formatBytes(stats[data.id]!.memLimit) }}
+        </span>
+        <span v-else class="text-muted">—</span>
+      </template>
+    </Column>
+    <Column header="Ports">
+      <template #body="{ data }">
+        <span v-if="data.ports.length">
+          {{
+            data.ports
+              .filter((p: any) => p.publicPort)
+              .map((p: any) => `${p.publicPort}:${p.privatePort}`)
+              .join(', ')
+          }}
         </span>
         <span v-else class="text-muted">—</span>
       </template>

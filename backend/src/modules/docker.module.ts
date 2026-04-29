@@ -11,6 +11,12 @@ export async function listContainers() {
         image: c.Image,
         status: c.Status,
         state: c.State,
+        ports: c.Ports.map((p) => ({
+            ip: p.IP,
+            privatePort: p.PrivatePort,
+            publicPort: p.PublicPort,
+            type: p.Type,
+        }))
     }));
 }
 

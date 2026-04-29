@@ -10,6 +10,7 @@ export interface Container {
   image: string
   status: string
   state: string
+  ports: { ip?: string; privatePort: number; publicPort?: number; type: string }[]
 }
 
 const toast = useToast()
@@ -22,7 +23,12 @@ async function fetchContainers() {
     const { data } = await axios.get('/api/docker/containers', { withCredentials: true })
     containers.value = data
   } catch {
-    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de récupérer les conteneurs', life: 3000 })
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: 'Impossible de récupérer les conteneurs',
+      life: 3000,
+    })
   } finally {
     loading.value = false
   }
@@ -33,7 +39,12 @@ async function handleStart(id: string) {
     await axios.post(`/api/docker/containers/${id}/start`, {}, { withCredentials: true })
     await fetchContainers()
   } catch {
-    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de démarrer le conteneur', life: 3000 })
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: 'Impossible de démarrer le conteneur',
+      life: 3000,
+    })
   }
 }
 
@@ -42,7 +53,12 @@ async function handleStop(id: string) {
     await axios.post(`/api/docker/containers/${id}/stop`, {}, { withCredentials: true })
     await fetchContainers()
   } catch {
-    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de stopper le conteneur', life: 3000 })
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: 'Impossible de stopper le conteneur',
+      life: 3000,
+    })
   }
 }
 
