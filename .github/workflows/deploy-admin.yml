@@ -1,0 +1,46 @@
+name: Deploy admin panel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "frontend/**"
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    if: |
+      contains(join(github.event.commits.*.modified, ','), 'backend/') ||
+      contains(join(github.event.commits.*.added, ','), 'backend/')
+    steps:
+      - name: Deploy backend via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: debian
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/debian/admin-panel/backend
+            git pull
+            npm install
+            npm run build
+            sudo systemctl restart admin-backend
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    if: |
+      contains(join(github.event.commits.*.modified, ','), 'frontend/') ||
+      contains(join(github.event.commits.*.added, ','), 'frontend/')
+    steps:
+      - name: Deploy frontend via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: debian
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/debian/admin-panel/frontend
+            git pull
+            docker compose up -d --build

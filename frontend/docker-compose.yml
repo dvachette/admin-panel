@@ -1,0 +1,9 @@
+services:
+  admin-frontend:
+    build: .
+    container_name: admin-frontend
+    ports:
+      - "3005:3005"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
