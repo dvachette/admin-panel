@@ -1,19 +1,7 @@
-name: Deploy admin panel
-
-on:
-  push:
-    branches:
-      - master
-    paths:
-      - "backend/**"
-      - "frontend/**"
-
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
-    if: |
-      contains(join(github.event.commits.*.modified, ','), 'backend/') ||
-      contains(join(github.event.commits.*.added, ','), 'backend/')
+    if: contains(toJson(github.event.commits), 'backend/')
     steps:
       - name: Deploy backend via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -30,9 +18,7 @@ jobs:
 
   deploy-frontend:
     runs-on: ubuntu-latest
-    if: |
-      contains(join(github.event.commits.*.modified, ','), 'frontend/') ||
-      contains(join(github.event.commits.*.added, ','), 'frontend/')
+    if: contains(toJson(github.event.commits), 'frontend/')
     steps:
       - name: Deploy frontend via SSH
         uses: appleboy/ssh-action@v1.0.3
