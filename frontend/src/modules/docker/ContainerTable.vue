@@ -4,6 +4,8 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import ConfirmDialog from 'primevue/confirmdialog'
+import { useConfirm } from 'primevue'
 import type { Container } from '@/views/DockerView.vue'
 
 interface Stats {
@@ -12,6 +14,8 @@ interface Stats {
   memLimit: number
   memPercent: number
 }
+
+const confirm = useConfirm()
 
 // eslint-disable-next-line
 const props = defineProps<{
@@ -22,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   start: [id: string]
   stop: [id: string]
+  remove: [id: string]
 }>()
 
 const stats = ref<Record<string, Stats>>({})
@@ -29,6 +34,18 @@ const sseMap = ref<Record<string, EventSource>>({})
 
 function formatBytes(bytes: number) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+function confirmRemove(id: string) {
+  confirm.require({
+    message: 'Supprimer ce conteneur ?',
+    header: 'Confirmation',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    accept: () => emit('remove', id),
+  })
 }
 
 function openStats(id: string) {
@@ -61,6 +78,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <ConfirmDialog />
   <DataTable :value="containers" :loading="loading" stripedRows>
     <Column field="name" header="Nom" />
     <Column field="image" header="Image" />
@@ -117,6 +135,13 @@ onUnmounted(() => {
             text
             :disabled="data.state !== 'running'"
             @click="toggleStats(data.id)"
+          />
+          <Button
+            icon="pi pi-trash"
+            size="small"
+            severity="danger"
+            text
+            @click="confirmRemove(data.id)"
           />
         </div>
       </template>

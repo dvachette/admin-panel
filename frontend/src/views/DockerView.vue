@@ -17,6 +17,20 @@ const toast = useToast()
 const containers = ref<Container[]>([])
 const loading = ref(false)
 
+async function handleRemove(id: string) {
+  try {
+    await axios.delete(`/api/docker/containers/${id}`, { withCredentials: true })
+    await fetchContainers()
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: 'Impossible de supprimer le conteneur',
+      life: 3000,
+    })
+  }
+}
+
 async function fetchContainers() {
   loading.value = true
   try {
@@ -73,6 +87,7 @@ onMounted(fetchContainers)
       :loading="loading"
       @start="handleStart"
       @stop="handleStop"
+      @remove="handleRemove"
     />
   </div>
 </template>

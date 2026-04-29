@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listContainers, startContainer, stopContainer, streamContainerStats } from "../modules/docker.module";
+import { listContainers, startContainer, stopContainer, streamContainerStats, removeContainer } from "../modules/docker.module";
 
 export const dockerRouter = Router();
 
@@ -44,5 +44,14 @@ dockerRouter.get("/containers/:id/stats", async (req, res) => {
         }, controller.signal);
     } catch (err) {
         res.end();
+    }
+});
+
+dockerRouter.delete("/containers/:id", async (req, res) => {
+    try {
+        await removeContainer(req.params.id);
+        res.json({ ok: true });
+    } catch {
+        res.status(500).json({ error: "Failed to remove container" });
     }
 });

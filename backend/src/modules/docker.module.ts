@@ -54,3 +54,8 @@ export async function streamContainerStats(id: string, onData: (stats: object) =
         } catch { }
     });
 }
+
+export async function removeContainer(id: string) {
+    const container = docker.getContainer(id);
+    await container.remove({ force: true });
+}
