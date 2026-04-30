@@ -6,3 +6,8 @@ export interface VhostConfig {
   root?: string
   ssl: boolean
 }
+
+export interface Vhost {
+  name: string
+  enabled: boolean
+}

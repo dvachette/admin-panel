@@ -1,32 +1,29 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import VhostTable from '@/components/nginx/VhostTable.vue'
 import VhostForm from '@/components/nginx/VhostForm.vue'
-
-export interface Vhost {
-  name: string
-  enabled: boolean
-}
+import type { Vhost } from '@/types/nginx.type'
+import { useNginxService } from '@/services/nginxService'
 
 const toast = useToast()
+const nginxService = useNginxService()
 const status = ref<'active' | 'inactive'>('inactive')
 const vhosts = ref<Vhost[]>([])
 const showForm = ref(false)
 const loading = ref(false)
 
 async function fetchStatus() {
-  const { data } = await axios.get('/api/nginx/status', { withCredentials: true })
+  const { data } = await nginxService.getStatus()
   status.value = data.status
 }
 
 async function fetchVhosts() {
   loading.value = true
   try {
-    const { data } = await axios.get('/api/nginx/vhosts', { withCredentials: true })
+    const { data } = await nginxService.getVhosts()
     vhosts.value = data
   } catch {
     toast.add({
@@ -42,7 +39,7 @@ async function fetchVhosts() {
 
 async function handleStart() {
   try {
-    await axios.post('/api/nginx/start', {}, { withCredentials: true })
+    await nginxService.startNginx()
     await fetchStatus()
   } catch {
     toast.add({
@@ -56,7 +53,7 @@ async function handleStart() {
 
 async function handleStop() {
   try {
-    await axios.post('/api/nginx/stop', {}, { withCredentials: true })
+    await nginxService.stopNginx()
     await fetchStatus()
   } catch {
     toast.add({
@@ -70,7 +67,7 @@ async function handleStop() {
 
 async function handleReload() {
   try {
-    await axios.post('/api/nginx/reload', {}, { withCredentials: true })
+    await nginxService.reloadNginx()
     toast.add({ severity: 'success', summary: 'Rechargé', detail: 'Nginx rechargé', life: 2000 })
   } catch {
     toast.add({
@@ -84,7 +81,7 @@ async function handleReload() {
 
 async function handleEnable(name: string) {
   try {
-    await axios.post(`/api/nginx/vhosts/${name}/enable`, {}, { withCredentials: true })
+    await nginxService.enableVhost(name)
     await fetchVhosts()
   } catch {
     toast.add({
@@ -98,7 +95,7 @@ async function handleEnable(name: string) {
 
 async function handleDisable(name: string) {
   try {
-    await axios.post(`/api/nginx/vhosts/${name}/disable`, {}, { withCredentials: true })
+    await nginxService.disableVhost(name)
     await fetchVhosts()
   } catch {
     toast.add({
@@ -112,7 +109,7 @@ async function handleDisable(name: string) {
 
 async function handleDelete(name: string) {
   try {
-    await axios.delete(`/api/nginx/vhosts/${name}`, { withCredentials: true })
+    await nginxService.deleteVhost(name)
     await fetchVhosts()
   } catch {
     toast.add({
@@ -126,7 +123,7 @@ async function handleDelete(name: string) {
 
 async function handleCreate(cfg: object) {
   try {
-    await axios.post('/api/nginx/vhosts', cfg, { withCredentials: true })
+    await nginxService.createVhost(cfg)
     showForm.value = false
     await fetchVhosts()
     toast.add({ severity: 'success', summary: 'Créé', detail: 'Vhost créé', life: 2000 })

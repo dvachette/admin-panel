@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import ContainerTable from '@/components/docker/ContainerTable.vue'
 import { useDockerService } from '@/services/dockerService'
-import { Container } from '@/models/containerModel'
+import { Container } from '@/types/docker.type'
 
 
 
