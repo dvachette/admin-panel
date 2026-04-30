@@ -5,7 +5,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
-import type { Vhost } from '@/views/NginxView.vue'
+import type { Vhost } from '@/types/nginxTypes'
 
 const props = defineProps<{
   vhosts: Vhost[]

@@ -5,7 +5,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import VhostTable from '@/components/nginx/VhostTable.vue'
 import VhostForm from '@/components/nginx/VhostForm.vue'
-import type { Vhost } from '@/types/nginx.type'
+import type { Vhost } from '@/types/nginxTypes'
 import { useNginxService } from '@/services/nginxService'
 
 const toast = useToast()

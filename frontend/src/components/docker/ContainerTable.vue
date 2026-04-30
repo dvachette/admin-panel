@@ -6,7 +6,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue'
-import type { Container } from '@/types/docker.type'
+import type { Container } from '@/types/dockerTypes'
 import { useDockerService } from '@/services/dockerService'
 
 interface Stats {

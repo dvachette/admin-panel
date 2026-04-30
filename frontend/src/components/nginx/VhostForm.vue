@@ -6,7 +6,7 @@ import InputNumber from 'primevue/inputnumber'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Button from 'primevue/button'
-import type { VhostConfig } from '@/types/nginx.type'
+import type { VhostConfig } from '@/types/nginxTypes'
 
 const emit = defineEmits<{
   submit: [cfg: VhostConfig]
