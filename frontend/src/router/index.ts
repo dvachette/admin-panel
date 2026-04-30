@@ -28,6 +28,11 @@ const router = createRouter({
           name: 'nginx',
           component: () => import('@/views/NginxView.vue'),
         },
+        {
+          path: 'portfolio',
+          name: 'portfolio',
+          component: () => import('@/views/PortfolioView.vue'),
+        },
       ],
     },
   ],

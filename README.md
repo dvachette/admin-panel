@@ -23,6 +23,10 @@ VPS administration panel — Vue 3 + TypeScript + Express.
 - Create a virtual host (proxy or static mode, with or without SSL)
 - Enable / disable / delete a virtual host
 
+### Portfolio
+- List, create, edit and delete projects
+- Edit competence levels (UEs)
+
 ## Architecture
 
 ```
@@ -49,7 +53,7 @@ On the server:
 ### 1. Clone the repository
 
 ```bash
-git clone git@github.com:dvachette/admin-panel.git /opt/admin-panel
+git clone <repo_url> /opt/admin-panel
 cd /opt/admin-panel
 ```
 
@@ -75,6 +79,7 @@ ADMIN_USER=<username>
 ADMIN_PASSWORD_HASH=<bcrypt_hash>
 JWT_SECRET=<long_random_string>
 NODE_ENV=production
+PORTFOLIO_DATA_PATH=<path_to_portfolio_data_directory>
 ```
 
 Generate the password hash:
@@ -118,7 +123,7 @@ Create `/etc/sudoers.d/admin-panel`, replacing `<user>`:
 ```
 
 ```bash
-sudo vi -f /etc/sudoers.d/admin-panel
+sudo visudo -f /etc/sudoers.d/admin-panel
 ```
 
 ### 5. Frontend
