@@ -7,8 +7,8 @@ import Tab from 'primevue/tab'
 import TabList from 'primevue/tablist'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
-import ProjectTable from '@/modules/portfolio/ProjectTable.vue'
-import UETable from '@/modules/portfolio/UETable.vue'
+import ProjectTable from '@/components/portfolio/ProjectTable.vue'
+import UETable from '@/components/portfolio/UETable.vue'
 
 export interface Project {
   id: string

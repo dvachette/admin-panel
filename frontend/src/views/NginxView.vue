@@ -4,8 +4,8 @@ import axios from 'axios'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
-import VhostTable from '@/modules/nginx/VhostTable.vue'
-import VhostForm from '@/modules/nginx/VhostForm.vue'
+import VhostTable from '@/components/nginx/VhostTable.vue'
+import VhostForm from '@/components/nginx/VhostForm.vue'
 
 export interface Vhost {
   name: string
