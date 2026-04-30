@@ -138,6 +138,11 @@ function handleEdit(project: Project) {
   editingProject.value = { ...project }
 }
 
+function handleCancel() {
+  showForm.value = false
+  editingProject.value = null
+}
+
 onMounted(() => {
   fetchProjects()
   fetchUEs()
@@ -173,10 +178,7 @@ onMounted(() => {
       :project="editingProject"
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
-      @cancel="
-        showForm = false
-        editingProject = null
-      "
+      @cancel="handleCancel"
     />
   </div>
 </template>
