@@ -4,7 +4,7 @@ import path from 'path'
 const DATA_PATH = process.env.PORTFOLIO_DATA_PATH!
 
 function projectsFile() {
-  return path.join(DATA_PATH, 'projets.json')
+  return path.join(DATA_PATH, 'projects.json')
 }
 
 function uesFile() {
