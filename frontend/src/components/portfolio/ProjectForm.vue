@@ -4,12 +4,22 @@ import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import SelectButton from 'primevue/selectbutton'
+import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
-import Chip from 'primevue/chip'
+import Message from 'primevue/message'
 import type { Project } from '@/views/PortfolioView.vue'
+import type { UE } from '@/views/PortfolioView.vue'
+
+const LANGUAGES = [
+  'TypeScript', 'JavaScript', 'Python', 'Java', 'C#', 'C++',
+  'PHP', 'Kotlin', 'Assembly', 'C', 'Vue', 'React', 'Angular',
+  'Bash', 'HTML/CSS', 'SQL',
+]
 
 const props = defineProps<{
   project: Project | null
+  ues: UE[]
+  projects: Project[]
 }>()
 
 const emit = defineEmits<{
@@ -34,11 +44,32 @@ const empty = (): Project => ({
 
 const form = ref<Project>(props.project ? { ...props.project } : empty())
 
-watch(
-  () => props.project,
-  (val) => {
-    form.value = val ? { ...val } : empty()
-  },
+watch(() => props.project, (val) => {
+  form.value = val ? { ...val } : empty()
+})
+
+function slugify(str: string) {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
+
+watch(() => form.value.title, (val) => {
+  if (!isEdit.value) {
+    form.value.id = slugify(val)
+  }
+})
+
+const idCollision = computed(() => {
+  if (isEdit.value) return false
+  return props.projects.some(p => p.id === form.value.id)
+})
+
+const ueOptions = computed(() =>
+  props.ues.map(u => ({ label: u.name, value: u.id }))
 )
 
 const projectTypeOptions = [
@@ -46,38 +77,11 @@ const projectTypeOptions = [
   { label: 'Academic', value: 'Academic' },
 ]
 
-const langInput = ref('')
-const competenceInput = ref('')
-
-function addLang() {
-  const val = langInput.value.trim()
-  if (val && !form.value.programmingLanguages.includes(val)) {
-    form.value.programmingLanguages.push(val)
-  }
-  langInput.value = ''
-}
-
-function removeLang(lang: string) {
-  form.value.programmingLanguages = form.value.programmingLanguages.filter((l) => l !== lang)
-}
-
-function addCompetence() {
-  const val = competenceInput.value.trim()
-  if (val && !form.value.competences.includes(val)) {
-    form.value.competences.push(val)
-  }
-  competenceInput.value = ''
-}
-
-function removeCompetence(c: string) {
-  form.value.competences = form.value.competences.filter((x) => x !== c)
-}
-
-const valid = computed(
-  () =>
-    form.value.id.trim() !== '' &&
-    form.value.title.trim() !== '' &&
-    form.value.description.trim() !== '',
+const valid = computed(() =>
+  form.value.id.trim() !== '' &&
+  form.value.title.trim() !== '' &&
+  form.value.description.trim() !== '' &&
+  !idCollision.value
 )
 
 function handleSubmit() {
@@ -97,13 +101,16 @@ function handleSubmit() {
   >
     <div class="form">
       <div class="field">
-        <label>ID</label>
-        <InputText v-model="form.id" :disabled="isEdit" placeholder="mon-projet" fluid />
+        <label>Titre</label>
+        <InputText v-model="form.title" placeholder="Mon Projet" fluid />
       </div>
 
       <div class="field">
-        <label>Titre</label>
-        <InputText v-model="form.title" placeholder="Mon Projet" fluid />
+        <label>ID</label>
+        <InputText v-model="form.id" :disabled="isEdit" fluid />
+        <Message v-if="idCollision" severity="error" size="small">
+          Cet ID existe déjà
+        </Message>
       </div>
 
       <div class="field">
@@ -138,46 +145,26 @@ function handleSubmit() {
 
       <div class="field">
         <label>Langages</label>
-        <div class="chip-input">
-          <InputText
-            v-model="langInput"
-            placeholder="TypeScript"
-            @keydown.enter.prevent="addLang"
-            fluid
-          />
-          <Button icon="pi pi-plus" size="small" @click="addLang" />
-        </div>
-        <div class="chips">
-          <Chip
-            v-for="lang in form.programmingLanguages"
-            :key="lang"
-            :label="lang"
-            removable
-            @remove="removeLang(lang)"
-          />
-        </div>
+        <MultiSelect
+          v-model="form.programmingLanguages"
+          :options="LANGUAGES"
+          placeholder="Sélectionner des langages"
+          display="chip"
+          fluid
+        />
       </div>
 
       <div class="field">
         <label>Compétences</label>
-        <div class="chip-input">
-          <InputText
-            v-model="competenceInput"
-            placeholder="realiser"
-            @keydown.enter.prevent="addCompetence"
-            fluid
-          />
-          <Button icon="pi pi-plus" size="small" @click="addCompetence" />
-        </div>
-        <div class="chips">
-          <Chip
-            v-for="c in form.competences"
-            :key="c"
-            :label="c"
-            removable
-            @remove="removeCompetence(c)"
-          />
-        </div>
+        <MultiSelect
+          v-model="form.competences"
+          :options="ueOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Sélectionner des compétences"
+          display="chip"
+          fluid
+        />
       </div>
     </div>
 
@@ -204,17 +191,5 @@ function handleSubmit() {
 label {
   font-size: 0.875rem;
   color: var(--p-surface-300);
-}
-
-.chip-input {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.25rem;
 }
 </style>

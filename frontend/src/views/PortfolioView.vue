@@ -177,6 +177,8 @@ onMounted(() => {
     <ProjectForm
       v-if="showForm || editingProject"
       :project="editingProject"
+      :ues="ues"
+      :projects="projects"
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
       @cancel="handleCancel"
