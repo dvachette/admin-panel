@@ -9,6 +9,7 @@ import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import ProjectTable from '@/components/portfolio/ProjectTable.vue'
 import UETable from '@/components/portfolio/UETable.vue'
+import ProjectForm from '@/components/portfolio/ProjectForm.vue'
 
 export interface Project {
   id: string
