@@ -6,7 +6,8 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue'
-import type { Container } from '@/views/DockerView.vue'
+import type { Container } from '@/types/dockerTypes'
+import { useDockerService } from '@/services/dockerService'
 
 interface Stats {
   cpu: number
@@ -16,7 +17,7 @@ interface Stats {
 }
 
 const confirm = useConfirm()
-
+const dockerService = useDockerService()
 // eslint-disable-next-line
 const props = defineProps<{
   containers: Container[]
@@ -50,7 +51,7 @@ function confirmRemove(id: string) {
 
 function openStats(id: string) {
   if (sseMap.value[id]) return
-  const es = new EventSource(`/api/docker/containers/${id}/stats`, { withCredentials: true })
+  const es = dockerService.getStatsStream(id)
   es.onmessage = (e) => {
     stats.value[id] = JSON.parse(e.data)
   }

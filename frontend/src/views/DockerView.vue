@@ -1,25 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { useToast } from 'primevue/usetoast'
-import ContainerTable from '@/modules/docker/ContainerTable.vue'
+import ContainerTable from '@/components/docker/ContainerTable.vue'
+import { useDockerService } from '@/services/dockerService'
+import type { Container } from '@/types/dockerTypes'
 
-export interface Container {
-  id: string
-  name: string
-  image: string
-  status: string
-  state: string
-  ports: { ip?: string; privatePort: number; publicPort?: number; type: string }[]
-}
+
 
 const toast = useToast()
+const dockerService = useDockerService()
 const containers = ref<Container[]>([])
 const loading = ref(false)
 
 async function handleRemove(id: string) {
   try {
-    await axios.delete(`/api/docker/containers/${id}`, { withCredentials: true })
+    await dockerService.deleteContainer(id)
     await fetchContainers()
   } catch {
     toast.add({
@@ -34,7 +29,7 @@ async function handleRemove(id: string) {
 async function fetchContainers() {
   loading.value = true
   try {
-    const { data } = await axios.get('/api/docker/containers', { withCredentials: true })
+    const { data } = await dockerService.getContainers()
     containers.value = data
   } catch {
     toast.add({
@@ -50,7 +45,7 @@ async function fetchContainers() {
 
 async function handleStart(id: string) {
   try {
-    await axios.post(`/api/docker/containers/${id}/start`, {}, { withCredentials: true })
+    await dockerService.startContainer(id)
     await fetchContainers()
   } catch {
     toast.add({
@@ -64,7 +59,7 @@ async function handleStart(id: string) {
 
 async function handleStop(id: string) {
   try {
-    await axios.post(`/api/docker/containers/${id}/stop`, {}, { withCredentials: true })
+    await dockerService.stopContainer(id)
     await fetchContainers()
   } catch {
     toast.add({

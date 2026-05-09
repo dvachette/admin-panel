@@ -11,6 +11,7 @@ const collapsed = ref(false)
 const navItems = [
   { label: 'Docker', icon: 'pi pi-box', to: '/docker' },
   { label: 'Nginx', icon: 'pi pi-server', to: '/nginx' },
+  { label: 'Portfolio', icon: 'pi pi-briefcase', to: '/portfolio' },
 ]
 function logout() {
   auth.logout()
