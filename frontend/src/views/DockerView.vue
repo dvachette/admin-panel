@@ -5,8 +5,6 @@ import ContainerTable from '@/components/docker/ContainerTable.vue'
 import { useDockerService } from '@/services/dockerService'
 import type { Container } from '@/types/dockerTypes'
 
-
-
 const toast = useToast()
 const dockerService = useDockerService()
 const containers = ref<Container[]>([])

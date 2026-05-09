@@ -9,17 +9,32 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import type { Project } from '@/views/PortfolioView.vue'
 import type { UE } from '@/views/PortfolioView.vue'
+import axios from 'axios'
 
 const LANGUAGES = [
-  'TypeScript', 'JavaScript', 'Python', 'Java', 'C#', 'C++',
-  'PHP', 'Kotlin', 'Assembly', 'C', 'Vue', 'React', 'Angular',
-  'Bash', 'HTML/CSS', 'SQL',
+  'TypeScript',
+  'JavaScript',
+  'Python',
+  'Java',
+  'C#',
+  'C++',
+  'PHP',
+  'Kotlin',
+  'Assembly',
+  'C',
+  'Vue',
+  'React',
+  'Angular',
+  'Bash',
+  'HTML/CSS',
+  'SQL',
 ]
 
 const props = defineProps<{
   project: Project | null
   ues: UE[]
   projects: Project[]
+  images: string[]
 }>()
 
 const emit = defineEmits<{
@@ -44,9 +59,12 @@ const empty = (): Project => ({
 
 const form = ref<Project>(props.project ? { ...props.project } : empty())
 
-watch(() => props.project, (val) => {
-  form.value = val ? { ...val } : empty()
-})
+watch(
+  () => props.project,
+  (val) => {
+    form.value = val ? { ...val } : empty()
+  },
+)
 
 function slugify(str: string) {
   return str
@@ -57,37 +75,60 @@ function slugify(str: string) {
     .replace(/-+/g, '-')
 }
 
-watch(() => form.value.title, (val) => {
-  if (!isEdit.value) {
-    form.value.id = slugify(val)
-  }
-})
+watch(
+  () => form.value.title,
+  (val) => {
+    if (!isEdit.value) {
+      form.value.id = slugify(val)
+    }
+  },
+)
 
 const idCollision = computed(() => {
   if (isEdit.value) return false
-  return props.projects.some(p => p.id === form.value.id)
+  return props.projects.some((p) => p.id === form.value.id)
 })
 
-const ueOptions = computed(() =>
-  props.ues.map(u => ({ label: u.name, value: u.id }))
-)
+const ueOptions = computed(() => props.ues.map((u) => ({ label: u.name, value: u.id })))
 
 const projectTypeOptions = [
   { label: 'Personal', value: 'Personal' },
   { label: 'Academic', value: 'Academic' },
 ]
 
-const valid = computed(() =>
-  form.value.id.trim() !== '' &&
-  form.value.title.trim() !== '' &&
-  form.value.description.trim() !== '' &&
-  !idCollision.value
+const valid = computed(
+  () =>
+    form.value.id.trim() !== '' &&
+    form.value.title.trim() !== '' &&
+    form.value.description.trim() !== '' &&
+    !idCollision.value,
 )
+
+const uploading = ref(false)
 
 function handleSubmit() {
   if (!valid.value) return
   if (isEdit.value) emit('submitUpdate', { ...form.value })
   else emit('submitCreate', { ...form.value })
+}
+
+async function handleImageUpload(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('image', file)
+    const { data } = await axios.post('/api/portfolio/images', formData, {
+      withCredentials: true,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    form.value.image = data.filename
+  } catch {
+    // handle error
+  } finally {
+    uploading.value = false
+  }
 }
 </script>
 
@@ -108,9 +149,7 @@ function handleSubmit() {
       <div class="field">
         <label>ID</label>
         <InputText v-model="form.id" :disabled="isEdit" fluid />
-        <Message v-if="idCollision" severity="error" size="small">
-          Cet ID existe déjà
-        </Message>
+        <Message v-if="idCollision" severity="error" size="small"> Cet ID existe déjà </Message>
       </div>
 
       <div class="field">
@@ -129,8 +168,21 @@ function handleSubmit() {
       </div>
 
       <div class="field">
-        <label>Image (nom du fichier)</label>
-        <InputText v-model="form.image" placeholder="mon-projet.png" fluid />
+        <label>Image</label>
+        <Select v-model="form.image" :options="images" placeholder="Sélectionner une image" fluid />
+        <div class="upload-row">
+          <label class="upload-label">
+            <input type="file" accept=".png,.jpg,.jpeg,.webp" hidden @change="handleImageUpload" />
+            <Button
+              label="Uploader une nouvelle image"
+              icon="pi pi-upload"
+              size="small"
+              text
+              :loading="uploading"
+              as="span"
+            />
+          </label>
+        </div>
       </div>
 
       <div class="field">
@@ -191,5 +243,13 @@ function handleSubmit() {
 label {
   font-size: 0.875rem;
   color: var(--p-surface-300);
+}
+
+.upload-row {
+  margin-top: 0.25rem;
+}
+
+.upload-label {
+  cursor: pointer;
 }
 </style>

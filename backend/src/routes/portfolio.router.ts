@@ -7,6 +7,8 @@ import {
   listUEs,
   updateUELevel,
   type Project,
+  listImages,
+  uploadImage,
 } from '../modules/portfolio.module'
 
 export const portfolioRouter = Router()
@@ -68,4 +70,21 @@ portfolioRouter.patch('/ues/:id/level', async (req, res) => {
   } catch (err: any) {
     res.status(404).json({ error: err.message })
   }
+})
+
+portfolioRouter.get('/images', async (req, res) => {
+  try {
+    const images = await listImages()
+    res.json(images)
+  } catch {
+    res.status(500).json({ error: 'Failed to list images' })
+  }
+})
+
+portfolioRouter.post('/images', uploadImage.single('image'), (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'No file uploaded' })
+    return
+  }
+  res.json({ filename: req.file.originalname })
 })

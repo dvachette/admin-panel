@@ -40,6 +40,22 @@ const loadingUEs = ref(false)
 const showForm = ref(false)
 const editingProject = ref<Project | null>(null)
 
+const images = ref<string[]>([])
+
+async function fetchImages() {
+  try {
+    const { data } = await axios.get('/api/portfolio/images', { withCredentials: true })
+    images.value = data
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: 'Impossible de récupérer les images',
+      life: 3000,
+    })
+  }
+}
+
 async function fetchProjects() {
   loadingProjects.value = true
   try {
@@ -147,6 +163,7 @@ function handleCancel() {
 onMounted(() => {
   fetchProjects()
   fetchUEs()
+  fetchImages()
 })
 </script>
 
@@ -179,6 +196,7 @@ onMounted(() => {
       :project="editingProject"
       :ues="ues"
       :projects="projects"
+      :images="images"
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
       @cancel="handleCancel"

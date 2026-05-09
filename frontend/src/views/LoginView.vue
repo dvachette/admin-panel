@@ -38,10 +38,21 @@ async function handleLogin() {
     <div class="login-card">
       <h2>Admin Panel</h2>
       <div class="field">
-        <InputText v-model="username" placeholder="Utilisateur" fluid @keydown.enter="handleLogin"/>
+        <InputText
+          v-model="username"
+          placeholder="Utilisateur"
+          fluid
+          @keydown.enter="handleLogin"
+        />
       </div>
       <div class="field">
-        <Password v-model="password" placeholder="Mot de passe" :feedback="false" fluid @keydown.enter="handleLogin"/>
+        <Password
+          v-model="password"
+          placeholder="Mot de passe"
+          :feedback="false"
+          fluid
+          @keydown.enter="handleLogin"
+        />
       </div>
       <Button label="Connexion" :loading="loading" fluid @click="handleLogin" />
     </div>

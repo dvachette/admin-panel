@@ -1,5 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
+import multer from 'multer'
+
 
 const DATA_PATH = process.env.PORTFOLIO_DATA_PATH!
 
@@ -79,4 +81,26 @@ export async function updateUELevel(id: string, level: number) {
   if (idx === -1) throw new Error('UE not found')
   ues[idx].level = level
   await writeJSON(uesFile(), ues)
+}
+
+export const uploadImage = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      cb(null, process.env.PORTFOLIO_IMAGES_PATH!)
+    },
+    filename: (_req, file, cb) => {
+      cb(null, file.originalname)
+    },
+  }),
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.png', '.jpg', '.jpeg', '.webp']
+    const ext = path.extname(file.originalname).toLowerCase()
+    if (allowed.includes(ext)) cb(null, true)
+    else cb(new Error('Invalid file type'))
+  },
+})
+
+export async function listImages(): Promise<string[]> {
+  const files = await fs.readdir(process.env.PORTFOLIO_IMAGES_PATH!)
+  return files.filter(f => ['.png', '.jpg', '.jpeg', '.webp'].includes(path.extname(f).toLowerCase()))
 }
