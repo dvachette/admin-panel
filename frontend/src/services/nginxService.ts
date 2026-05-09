@@ -21,18 +21,22 @@ async function reloadNginx() {
 
 async function enableVhost(name: string) {
     await axios.post(`/api/nginx/vhosts/${name}/enable`, {}, { withCredentials: true })
+    await reloadNginx()
 }
 
 async function disableVhost(name: string) {
     await axios.post(`/api/nginx/vhosts/${name}/disable`, {}, { withCredentials: true })
+    await reloadNginx()
 }
 
-async function deleteVhost(name:string) {
+async function deleteVhost(name: string) {
     await axios.delete(`/api/nginx/vhosts/${name}`, { withCredentials: true })
+    await reloadNginx()
 }
 
 async function createVhost(cfg: object) {
     await axios.post('/api/nginx/vhosts', cfg, { withCredentials: true })
+    await reloadNginx()
 }
 
 export function useNginxService() {
