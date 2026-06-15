@@ -7,7 +7,7 @@ import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
-import Slider from 'primevue/slider'
+import Select from 'primevue/select'
 import type { Skill, SkillDetail, SkillLevel } from '@/views/PortfolioView.vue'
 
 const props = defineProps<{
@@ -114,9 +114,16 @@ function handleSubmit() {
       </div>
 
       <div class="field">
-  <label>Niveau actuel — {{ form.level }}</label>
-  <Slider v-model="form.level" :min="1" :max="form.levels.length || 1" :step="1" />
-</div>
+        <label>Niveau actuel</label>
+        <Select
+          v-model="form.level"
+          :options="form.levels.map(l => ({ label: `${l.levelName} — ${l.description}`, value: l.level }))"
+          option-label="label"
+          option-value="value"
+          placeholder="Sélectionner un niveau"
+          fluid
+        />
+      </div>
 
       <div class="field">
         <label>Critères d'évaluation</label>
