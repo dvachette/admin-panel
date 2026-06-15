@@ -8,9 +8,36 @@ import TabList from 'primevue/tablist'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import ProjectTable from '@/components/portfolio/ProjectTable.vue'
-import UETable from '@/components/portfolio/UETable.vue'
 import ProjectForm from '@/components/portfolio/ProjectForm.vue'
+import SkillsManager from '@/components/portfolio/SkillsManager.vue'
 
+export interface SkillDetail {
+  id: string
+  name: string
+}
+
+export interface SkillLevel {
+  level: number
+  levelName: string
+  description: string
+  details: SkillDetail[]
+}
+
+export interface Skill {
+  id: string
+  name: string
+  image: string
+  description: string
+  level: number
+  details: SkillDetail[]
+  levels: SkillLevel[]
+}
+
+export interface Section {
+  section: string
+  icon: string
+  skills: Skill[]
+}
 export interface Project {
   id: string
   projectType: string
@@ -23,20 +50,13 @@ export interface Project {
   programmingLanguages: string[]
 }
 
-export interface UE {
-  id: string
-  name: string
-  description: string
-  level: number
-  details: object[]
-  levels: object[]
-}
+
 
 const toast = useToast()
 const projects = ref<Project[]>([])
-const ues = ref<UE[]>([])
+const sections = ref<Section[]>([])
+const loadingSections = ref(false)
 const loadingProjects = ref(false)
-const loadingUEs = ref(false)
 const showForm = ref(false)
 const editingProject = ref<Project | null>(null)
 
@@ -73,20 +93,75 @@ async function fetchProjects() {
   }
 }
 
-async function fetchUEs() {
-  loadingUEs.value = true
+async function fetchSections() {
+  loadingSections.value = true
   try {
-    const { data } = await axios.get('/api/portfolio/ues', { withCredentials: true })
-    ues.value = data
+    const { data } = await axios.get('/api/portfolio/sections', { withCredentials: true })
+    sections.value = data
   } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'Erreur',
-      detail: 'Impossible de récupérer les UEs',
-      life: 3000,
-    })
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de récupérer les compétences', life: 3000 })
   } finally {
-    loadingUEs.value = false
+    loadingSections.value = false
+  }
+}
+
+async function handleCreateSection(section: Section) {
+  try {
+    await axios.post('/api/portfolio/sections', section, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Créé', detail: 'Section créée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de créer la section', life: 3000 })
+  }
+}
+
+async function handleUpdateSection(index: number, section: Section) {
+  try {
+    await axios.put(`/api/portfolio/sections/${index}`, section, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Modifié', detail: 'Section modifiée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de modifier la section', life: 3000 })
+  }
+}
+
+async function handleDeleteSection(index: number) {
+  try {
+    await axios.delete(`/api/portfolio/sections/${index}`, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Supprimé', detail: 'Section supprimée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de supprimer la section', life: 3000 })
+  }
+}
+
+async function handleCreateSkill(sectionIndex: number, skill: Skill) {
+  try {
+    await axios.post(`/api/portfolio/sections/${sectionIndex}/skills`, skill, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Créé', detail: 'Compétence créée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de créer la compétence', life: 3000 })
+  }
+}
+
+async function handleUpdateSkill(sectionIndex: number, skillId: string, skill: Skill) {
+  try {
+    await axios.put(`/api/portfolio/sections/${sectionIndex}/skills/${skillId}`, skill, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Modifié', detail: 'Compétence modifiée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de modifier la compétence', life: 3000 })
+  }
+}
+
+async function handleDeleteSkill(sectionIndex: number, skillId: string) {
+  try {
+    await axios.delete(`/api/portfolio/sections/${sectionIndex}/skills/${skillId}`, { withCredentials: true })
+    await fetchSections()
+    toast.add({ severity: 'success', summary: 'Supprimé', detail: 'Compétence supprimée', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de supprimer la compétence', life: 3000 })
   }
 }
 
@@ -137,19 +212,7 @@ async function handleDelete(id: string) {
   }
 }
 
-async function handleUpdateLevel(id: string, level: number) {
-  try {
-    await axios.patch(`/api/portfolio/ues/${id}/level`, { level }, { withCredentials: true })
-    await fetchUEs()
-  } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'Erreur',
-      detail: 'Impossible de modifier le niveau',
-      life: 3000,
-    })
-  }
-}
+
 
 function handleEdit(project: Project) {
   editingProject.value = { ...project }
@@ -162,7 +225,7 @@ function handleCancel() {
 
 onMounted(() => {
   fetchProjects()
-  fetchUEs()
+  fetchSections()
   fetchImages()
 })
 </script>
@@ -186,15 +249,24 @@ onMounted(() => {
           />
         </TabPanel>
         <TabPanel value="ues">
-          <UETable :ues="ues" :loading="loadingUEs" @update-level="handleUpdateLevel" />
-        </TabPanel>
+          <SkillsManager
+            :sections="sections"
+            :loading="loadingSections"
+            @create-section="handleCreateSection"
+            @update-section="handleUpdateSection"
+            @delete-section="handleDeleteSection"
+            @create-skill="handleCreateSkill"
+            @update-skill="handleUpdateSkill"
+            @delete-skill="handleDeleteSkill"
+          />
+</TabPanel>
       </TabPanels>
     </Tabs>
 
     <ProjectForm
       v-if="showForm || editingProject"
       :project="editingProject"
-      :ues="ues"
+      :sections="sections"
       :projects="projects"
       :images="images"
       @submit-create="handleCreate"

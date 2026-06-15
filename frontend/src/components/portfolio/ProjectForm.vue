@@ -8,7 +8,7 @@ import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import type { Project } from '@/views/PortfolioView.vue'
-import type { UE } from '@/views/PortfolioView.vue'
+import type { Section } from '@/views/PortfolioView.vue'
 import axios from 'axios'
 
 const LANGUAGES = [
@@ -32,7 +32,7 @@ const LANGUAGES = [
 
 const props = defineProps<{
   project: Project | null
-  ues: UE[]
+  sections: Section[]
   projects: Project[]
   images: string[]
 }>()
@@ -58,6 +58,12 @@ const empty = (): Project => ({
 })
 
 const form = ref<Project>(props.project ? { ...props.project } : empty())
+
+const ueOptions = computed(() =>
+  props.sections.flatMap(s =>
+    s.skills.map(skill => ({ label: skill.name, value: skill.id }))
+  )
+)
 
 watch(
   () => props.project,
@@ -89,7 +95,6 @@ const idCollision = computed(() => {
   return props.projects.some((p) => p.id === form.value.id)
 })
 
-const ueOptions = computed(() => props.ues.map((u) => ({ label: u.name, value: u.id })))
 
 const projectTypeOptions = [
   { label: 'Personal', value: 'Personal' },

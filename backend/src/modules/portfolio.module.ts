@@ -34,13 +34,32 @@ export interface Project {
   programmingLanguages: string[]
 }
 
-export interface UE {
+export interface SkillDetail {
   id: string
   name: string
+}
+
+export interface SkillLevel {
+  level: number
+  levelName: string
+  description: string
+  details: SkillDetail[]
+}
+
+export interface Skill {
+  id: string
+  name: string
+  image: string
   description: string
   level: number
-  details: object[]
-  levels: object[]
+  details: SkillDetail[]
+  levels: SkillLevel[]
+}
+
+export interface Section {
+  section: string
+  icon: string
+  skills: Skill[]
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -70,17 +89,57 @@ export async function deleteProject(id: string) {
   if (filtered.length === projects.length) throw new Error('Project not found')
   await writeJSON(projectsFile(), filtered)
 }
-
-export async function listUEs(): Promise<UE[]> {
-  return readJSON<UE[]>(uesFile())
+function skillsFile() {
+  return path.join(DATA_PATH, 'skills.json')
 }
 
-export async function updateUELevel(id: string, level: number) {
-  const ues = await listUEs()
-  const idx = ues.findIndex(u => u.id === id)
-  if (idx === -1) throw new Error('UE not found')
-  ues[idx].level = level
-  await writeJSON(uesFile(), ues)
+export async function listSections(): Promise<Section[]> {
+  return readJSON<Section[]>(skillsFile())
+}
+
+export async function createSection(section: Section) {
+  const sections = await listSections()
+  sections.push(section)
+  await writeJSON(skillsFile(), sections)
+}
+
+export async function updateSection(index: number, data: Partial<Section>) {
+  const sections = await listSections()
+  if (!sections[index]) throw new Error('Section not found')
+  sections[index] = { ...sections[index], ...data }
+  await writeJSON(skillsFile(), sections)
+}
+
+export async function deleteSection(index: number) {
+  const sections = await listSections()
+  if (!sections[index]) throw new Error('Section not found')
+  sections.splice(index, 1)
+  await writeJSON(skillsFile(), sections)
+}
+
+export async function createSkill(sectionIndex: number, skill: Skill) {
+  const sections = await listSections()
+  if (!sections[sectionIndex]) throw new Error('Section not found')
+  sections[sectionIndex].skills.push(skill)
+  await writeJSON(skillsFile(), sections)
+}
+
+export async function updateSkill(sectionIndex: number, skillId: string, data: Partial<Skill>) {
+  const sections = await listSections()
+  if (!sections[sectionIndex]) throw new Error('Section not found')
+  const idx = sections[sectionIndex].skills.findIndex(s => s.id === skillId)
+  if (idx === -1) throw new Error('Skill not found')
+  sections[sectionIndex].skills[idx] = { ...sections[sectionIndex].skills[idx], ...data, id: skillId }
+  await writeJSON(skillsFile(), sections)
+}
+
+export async function deleteSkill(sectionIndex: number, skillId: string) {
+  const sections = await listSections()
+  if (!sections[sectionIndex]) throw new Error('Section not found')
+  const filtered = sections[sectionIndex].skills.filter(s => s.id !== skillId)
+  if (filtered.length === sections[sectionIndex].skills.length) throw new Error('Skill not found')
+  sections[sectionIndex].skills = filtered
+  await writeJSON(skillsFile(), sections)
 }
 
 export const uploadImage = multer({

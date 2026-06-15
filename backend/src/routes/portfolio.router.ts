@@ -4,8 +4,15 @@ import {
   createProject,
   updateProject,
   deleteProject,
-  listUEs,
-  updateUELevel,
+  listSections,
+  createSection,
+  updateSection,
+  deleteSection,
+  createSkill,
+  updateSkill,
+  deleteSkill,
+  type Section,
+  type Skill,
   type Project,
   listImages,
   uploadImage,
@@ -49,23 +56,63 @@ portfolioRouter.delete('/projects/:id', async (req, res) => {
   }
 })
 
-portfolioRouter.get('/ues', async (req, res) => {
+portfolioRouter.get('/sections', async (req, res) => {
   try {
-    const ues = await listUEs()
-    res.json(ues)
+    const sections = await listSections()
+    res.json(sections)
   } catch {
-    res.status(500).json({ error: 'Failed to list UEs' })
+    res.status(500).json({ error: 'Failed to list sections' })
   }
 })
 
-portfolioRouter.patch('/ues/:id/level', async (req, res) => {
+portfolioRouter.post('/sections', async (req, res) => {
   try {
-    const { level } = req.body
-    if (typeof level !== 'number') {
-      res.status(400).json({ error: 'level must be a number' })
-      return
-    }
-    await updateUELevel(req.params.id, level)
+    await createSection(req.body as Section)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+portfolioRouter.put('/sections/:index', async (req, res) => {
+  try {
+    await updateSection(parseInt(req.params.index), req.body as Partial<Section>)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(404).json({ error: err.message })
+  }
+})
+
+portfolioRouter.delete('/sections/:index', async (req, res) => {
+  try {
+    await deleteSection(parseInt(req.params.index))
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(404).json({ error: err.message })
+  }
+})
+
+portfolioRouter.post('/sections/:index/skills', async (req, res) => {
+  try {
+    await createSkill(parseInt(req.params.index), req.body as Skill)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+portfolioRouter.put('/sections/:index/skills/:id', async (req, res) => {
+  try {
+    await updateSkill(parseInt(req.params.index), req.params.id, req.body as Partial<Skill>)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(404).json({ error: err.message })
+  }
+})
+
+portfolioRouter.delete('/sections/:index/skills/:id', async (req, res) => {
+  try {
+    await deleteSkill(parseInt(req.params.index), req.params.id)
     res.json({ ok: true })
   } catch (err: any) {
     res.status(404).json({ error: err.message })
