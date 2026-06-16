@@ -9,9 +9,6 @@ function projectsFile() {
   return path.join(DATA_PATH, 'projects.json')
 }
 
-function uesFile() {
-  return path.join(DATA_PATH, 'UEs.json')
-}
 
 async function readJSON<T>(file: string): Promise<T> {
   const content = await fs.readFile(file, 'utf-8')
