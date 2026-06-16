@@ -40,7 +40,6 @@ watch(() => props.skill, (val) => {
 const newDetail = ref<SkillDetail>({ id: '', name: '' })
 const newLevel = ref<SkillLevel>({ level: 1, levelName: '', description: '', details: [] })
 const newLevelDetail = ref<SkillDetail>({ id: '', name: '' })
-const editingLevelIndex = ref<number | null>(null)
 
 function addDetail() {
   if (!newDetail.value.id.trim() || !newDetail.value.name.trim()) return
