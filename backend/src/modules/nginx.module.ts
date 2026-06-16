@@ -2,6 +2,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
+import os from 'os'
 
 const execAsync = promisify(exec)
 
@@ -118,5 +119,8 @@ server {
 }`
     }
 
-    await execAsync(`echo ${JSON.stringify(conf)} | sudo tee ${path.join(SITES_AVAILABLE, cfg.name)}`)
+    const tmpFile = path.join(os.tmpdir(), `nginx-${cfg.name}-${Date.now()}.conf`)
+    await fs.writeFile(tmpFile, conf, 'utf-8')
+    await execAsync(`sudo mv ${tmpFile} ${path.join(SITES_AVAILABLE, cfg.name)}`)
+    await execAsync(`sudo chmod 644 ${path.join(SITES_AVAILABLE, cfg.name)}`)
 }
