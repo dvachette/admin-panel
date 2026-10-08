@@ -1,10 +1,13 @@
 import axios from 'axios'
+import type { Vhost } from '@/types/nginxTypes'
+
 async function getStatus() {
   return await axios.get('/api/nginx/status', { withCredentials: true })
 }
 
+
 async function getVhosts() {
-  return await axios.get('/api/nginx/vhosts', { withCredentials: true })
+  return await axios.get<Vhost[]>('/api/nginx/vhosts', { withCredentials: true })
 }
 
 async function startNginx() {

@@ -30,20 +30,86 @@ export async function reloadNginx() {
     await execAsync('sudo systemctl reload nginx')
 }
 
-export async function listVhosts() {
-    const files = await fs.readdir(SITES_AVAILABLE)
-    const vhosts = await Promise.all(
-        files.map(async (file) => {
-            const enabledPath = path.join(SITES_ENABLED, file)
-            let enabled = false
+export interface VhostInfo {
+    name: string
+    enabled: boolean
+    serverNames: string[]
+    listenPorts: number[]
+    proxyTargets: string[]
+    proxyPorts: number[]
+    root: string | null
+    ssl: boolean
+    parseError: boolean
+}
+
+function stripComments(content: string): string {
+    return content.replace(/(^|\s)#.*$/gm, '$1')
+}
+
+function matchAll(content: string, directive: string): string[][] {
+    const regex: RegExp = new RegExp(`^\\s*${directive}\\s+([^;]+);`, 'gm')
+    return [...content.matchAll(regex)].map((m: RegExpMatchArray): string[] =>
+        m[1].trim().split(/\s+/)
+    )
+}
+
+function unique<T>(values: T[]): T[] {
+    return [...new Set(values)]
+}
+
+function parseListenPort(tokens: string[]): number | null {
+    const match: RegExpMatchArray | null = tokens[0].match(/(?:^|:)(\d+)$/)
+    return match ? Number(match[1]) : null
+}
+
+function parseProxyPort(target: string): number | null {
+    const match: RegExpMatchArray | null = target.match(/^[a-z]+:\/\/[^/:]+:(\d+)/)
+    return match ? Number(match[1]) : null
+}
+
+function parseVhost(name: string, enabled: boolean, raw: string): VhostInfo {
+    const content: string = stripComments(raw)
+    const listens: string[][] = matchAll(content, 'listen')
+    const proxyTargets: string[] = unique(matchAll(content, 'proxy_pass').map((t: string[]): string => t[0]))
+    const roots: string[][] = matchAll(content, 'root')
+
+    return {
+        name,
+        enabled,
+        serverNames: unique(matchAll(content, 'server_name').flat()),
+        listenPorts: unique(
+            listens.map(parseListenPort).filter((p: number | null): p is number => p !== null)
+        ),
+        proxyTargets,
+        proxyPorts: unique(
+            proxyTargets.map(parseProxyPort).filter((p: number | null): p is number => p !== null)
+        ),
+        root: roots.length > 0 ? roots[0][0] : null,
+        ssl: listens.some((t: string[]): boolean => t.includes('ssl')) || /^\s*ssl_certificate\s/m.test(content),
+        parseError: false
+    }
+}
+
+export async function listVhosts(): Promise<VhostInfo[]> {
+    const files: string[] = await fs.readdir(SITES_AVAILABLE)
+    const vhosts: VhostInfo[] = await Promise.all(
+        files.map(async (file: string): Promise<VhostInfo> => {
+            const enabled: boolean = await fs
+                .access(path.join(SITES_ENABLED, file))
+                .then((): boolean => true)
+                .catch((): boolean => false)
             try {
-                await fs.access(enabledPath)
-                enabled = true
-            } catch { }
-            return { name: file, enabled }
+                const raw: string = await fs.readFile(path.join(SITES_AVAILABLE, file), 'utf-8')
+                return parseVhost(file, enabled, raw)
+            } catch {
+                return {
+                    name: file, enabled, serverNames: [], listenPorts: [], proxyTargets: [],
+                    proxyPorts: [], root: null, ssl: false, parseError: true
+                }
+            }
         })
     )
-    return vhosts
+    return vhosts.sort((a: VhostInfo, b: VhostInfo): number => a.name.localeCompare(b.name))
 }
 
 export async function enableVhost(name: string) {

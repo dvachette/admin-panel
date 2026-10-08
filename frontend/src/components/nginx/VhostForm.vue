@@ -28,7 +28,7 @@ const modeOptions = [
 ]
 
 const valid = computed(() => {
-  if (!form.value.name || !form.value.serverName) return false
+  if (!form.value.serverName) return false
   if (form.value.mode === 'proxy' && !form.value.proxyPort) return false
   if (form.value.mode === 'static' && !form.value.root) return false
   return true
@@ -36,7 +36,8 @@ const valid = computed(() => {
 
 function handleSubmit() {
   if (!valid.value) return
-  emit('submit', { ...form.value })
+  const serverName: string = form.value.serverName.trim()
+  emit('submit', { ...form.value, serverName, name: serverName })
 }
 </script>
 
@@ -49,10 +50,6 @@ function handleSubmit() {
     @update:visible="emit('cancel')"
   >
     <div class="form">
-      <div class="field">
-        <label>Nom du fichier</label>
-        <InputText v-model="form.name" placeholder="mon-site" fluid />
-      </div>
 
       <div class="field">
         <label>Server name</label>

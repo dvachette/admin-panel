@@ -19,7 +19,13 @@ const emit = defineEmits<{
 }>()
 
 const confirm = useConfirm()
+function listenLabel(vhost: Vhost): string {
+  return vhost.listenPorts.join(', ')
+}
 
+function proxyLabel(vhost: Vhost): string {
+  return vhost.proxyPorts.length > 0 ? vhost.proxyPorts.join(', ') : vhost.proxyTargets.join(', ')
+}
 function confirmDelete(name: string) {
   confirm.require({
     message: `Supprimer le vhost "${name}" ?`,
@@ -45,6 +51,22 @@ function confirmDelete(name: string) {
         />
       </template>
     </Column>
+    <Column header="Écoute">
+  <template #body="{ data }">
+    <Tag v-if="data.parseError" value="illisible" severity="danger" />
+    <template v-else>
+      {{ listenLabel(data) }}
+      <Tag v-if="data.ssl" value="SSL" severity="info" />
+    </template>
+  </template>
+</Column>
+<Column header="Cible">
+  <template #body="{ data }">
+    <template v-if="data.parseError">-</template>
+    <template v-else-if="data.proxyTargets.length > 0">{{ proxyLabel(data) }}</template>
+    <template v-else>{{ data.root ?? '-' }}</template>
+  </template>
+</Column>
     <Column header="Actions">
       <template #body="{ data }">
         <div class="actions">

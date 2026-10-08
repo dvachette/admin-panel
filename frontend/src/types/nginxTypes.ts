@@ -10,4 +10,11 @@ export interface VhostConfig {
 export interface Vhost {
   name: string
   enabled: boolean
+  serverNames: string[]
+  listenPorts: number[]
+  proxyTargets: string[]
+  proxyPorts: number[]
+  root: string | null
+  ssl: boolean
+  parseError: boolean
 }
