@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import axios from 'axios'
+import VhostEditForm from '@/components/nginx/VhostEditForm.vue'
+import type { Vhost, VhostUpdate, VhostUpdateResult } from '@/types/nginxTypes'
 import { ref, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import VhostTable from '@/components/nginx/VhostTable.vue'
 import VhostForm from '@/components/nginx/VhostForm.vue'
-import type { Vhost } from '@/types/nginxTypes'
 import { useNginxService } from '@/services/nginxService'
 
 const toast = useToast()
@@ -14,7 +16,39 @@ const status = ref<'active' | 'inactive'>('inactive')
 const vhosts = ref<Vhost[]>([])
 const showForm = ref(false)
 const loading = ref(false)
+const editingVhost = ref<Vhost | null>(null)
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError<{ error?: string }>(error)) {
+    return error.response?.data?.error ?? fallback
+  }
+  return fallback
+}
+
+async function handleUpdate(name: string, update: VhostUpdate): Promise<void> {
+  try {
+    const result: VhostUpdateResult = await nginxService.updateVhost(name, update)
+    editingVhost.value = null
+    await fetchVhosts()
+    if (result.warnings.length > 0) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Modifié',
+        detail: result.warnings.join(' | '),
+        life: 8000,
+      })
+    } else {
+      toast.add({ severity: 'success', summary: 'Modifié', detail: 'Vhost modifié', life: 2000 })
+    }
+  } catch (error: unknown) {
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: errorMessage(error, 'Impossible de modifier le vhost'),
+      life: 8000,
+    })
+  }
+}
 async function fetchStatus() {
   const { data } = await nginxService.getStatus()
   status.value = data.status

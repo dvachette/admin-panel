@@ -94,3 +94,17 @@ nginxRouter.delete('/vhosts/:name', async (req, res) => {
         res.status(500).json({ error: 'Failed to delete vhost' })
     }
 })
+
+nginxRouter.put('/vhosts/:name', async (req, res) => {
+    try {
+        const result: VhostUpdateResult = await updateVhost(req.params.name, req.body as VhostUpdate)
+        res.json(result)
+    } catch (error: unknown) {
+        if (error instanceof VhostError) {
+            res.status(error.status).json({ error: error.message })
+            return
+        }
+        console.error(error)
+        res.status(500).json({ error: 'Failed to update vhost' })
+    }
+})

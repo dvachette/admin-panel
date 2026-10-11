@@ -18,3 +18,19 @@ export interface Vhost {
   ssl: boolean
   parseError: boolean
 }
+export interface ProxyPortChange {
+  from: string
+  port: number
+}
+
+export interface VhostUpdate {
+  serverName?: string
+  root?: string
+  proxyChanges?: ProxyPortChange[]
+}
+
+export interface VhostUpdateResult {
+  name: string
+  validated: boolean
+  warnings: string[]
+}

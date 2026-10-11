@@ -7,7 +7,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
 import type { Vhost } from '@/types/nginxTypes'
 
-const props = defineProps<{
+defineProps<{
   vhosts: Vhost[]
   loading: boolean
 }>()
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   enable: [name: string]
   disable: [name: string]
   delete: [name: string]
+  edit: [vhost: Vhost]
 }>()
 
 const confirm = useConfirm()
@@ -88,6 +89,13 @@ function confirmDelete(name: string) {
             tooltip="Désactiver"
             @click="emit('disable', data.name)"
           />
+          <Button
+  icon="pi pi-pencil"
+  size="small"
+  text
+  tooltip="Modifier"
+  @click="emit('edit', data)"
+/>
           <Button
             icon="pi pi-trash"
             size="small"

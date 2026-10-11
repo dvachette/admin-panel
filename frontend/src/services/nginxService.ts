@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Vhost } from '@/types/nginxTypes'
+import type { Vhost, VhostUpdate, VhostUpdateResult } from '@/types/nginxTypes'
 
 async function getStatus() {
   return await axios.get('/api/nginx/status', { withCredentials: true })
@@ -41,9 +41,18 @@ async function createVhost(cfg: object) {
   await axios.post('/api/nginx/vhosts', cfg, { withCredentials: true })
   await reloadNginx()
 }
-
+async function updateVhost(name: string, update: VhostUpdate): Promise<VhostUpdateResult> {
+  const { data } = await axios.put<VhostUpdateResult>(
+    `/api/nginx/vhosts/${encodeURIComponent(name)}`,
+    update,
+    { withCredentials: true }
+  )
+  await reloadNginx()
+  return data
+}
 export function useNginxService() {
   return {
+    updateVhost,
     getStatus,
     getVhosts,
     startNginx,
