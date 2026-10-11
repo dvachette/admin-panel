@@ -216,9 +216,16 @@ onMounted(() => {
       @enable="handleEnable"
       @disable="handleDisable"
       @delete="handleDelete"
+      @edit="editingVhost = $event"
     />
 
     <VhostForm v-if="showForm" @submit="handleCreate" @cancel="showForm = false" />
+    <VhostEditForm
+      v-if="editingVhost"
+      :vhost="editingVhost"
+      @submit="handleUpdate"
+      @cancel="editingVhost = null"
+    />
   </div>
 </template>
 
