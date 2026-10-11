@@ -10,6 +10,10 @@ import {
     deleteVhost,
     createVhost,
     type VhostConfig,
+    VhostUpdateResult,
+    updateVhost,
+    VhostUpdate,
+    VhostError,
 } from '../modules/nginx.module'
 
 export const nginxRouter = Router()

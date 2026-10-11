@@ -90,12 +90,12 @@ function confirmDelete(name: string) {
             @click="emit('disable', data.name)"
           />
           <Button
-  icon="pi pi-pencil"
-  size="small"
-  text
-  tooltip="Modifier"
-  @click="emit('edit', data)"
-/>
+            icon="pi pi-pencil"
+            size="small"
+            text
+            tooltip="Modifier"
+            @click="emit('edit', data)"
+          />
           <Button
             icon="pi pi-trash"
             size="small"
