@@ -5,7 +5,13 @@ import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Message from 'primevue/message'
 import Button from 'primevue/button'
-import type { Vhost, VhostUpdate, ProxyPortChange } from '@/types/nginxTypes'
+import {
+  coversDomain,
+  type Certificate,
+  type Vhost,
+  type VhostUpdate,
+  type ProxyPortChange,
+} from '@/types/nginxTypes'
 
 interface ProxyRow {
   from: string
@@ -15,7 +21,7 @@ interface ProxyRow {
 
 const TARGET_PORT_REGEX: RegExp = /^[a-z]+:\/\/[^/:]+:(\d+)/
 
-const props = defineProps<{ vhost: Vhost }>()
+const props = defineProps<{ vhost: Vhost; certificates: Certificate[] }>()
 
 const emit = defineEmits<{
   submit: [name: string, update: VhostUpdate]
@@ -44,7 +50,16 @@ const rows = ref<ProxyRow[]>(
 const domainChanged = computed<boolean>(
   () => canEditServerName && serverName.value.trim() !== initialServerName
 )
-const sslWarning = computed<boolean>(() => domainChanged.value && props.vhost.ssl)
+// Only warn when the current certificate (e.g. the *.dvachette.fr wildcard) does not cover the new domain
+const sslWarning = computed<boolean>(() => {
+  if (!domainChanged.value || !props.vhost.ssl) {
+    return false
+  }
+  const cert: Certificate | undefined = props.certificates.find(
+    (c: Certificate): boolean => c.name === props.vhost.certName
+  )
+  return !cert || !coversDomain(cert, serverName.value.trim())
+})
 
 const valid = computed<boolean>(() => {
   if (canEditServerName && serverName.value.trim() === '') {
@@ -105,7 +120,7 @@ function handleSubmit(): void {
       </div>
 
       <Message v-if="sslWarning" severity="warn" :closable="false">
-        Le certificat actuel ne correspond plus au nouveau domaine. Il faudra en émettre un nouveau.
+        Le certificat actuel ne couvre pas le nouveau domaine. Après l’enregistrement, utilisez le bouton cadenas pour en installer un.
       </Message>
 
       <div v-for="row in rows" :key="row.from" class="field">

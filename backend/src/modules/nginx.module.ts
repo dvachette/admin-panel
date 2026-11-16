@@ -40,6 +40,8 @@ export interface VhostInfo {
     proxyPorts: number[]
     root: string | null
     ssl: boolean
+    /** Let's Encrypt certificate name, from ssl_certificate /etc/letsencrypt/live/<name>/... */
+    certName: string | null
     parseError: boolean
 }
 
@@ -87,6 +89,7 @@ function parseVhost(name: string, enabled: boolean, raw: string): VhostInfo {
         ),
         root: roots.length > 0 ? roots[0][0] : null,
         ssl: listens.some((t: string[]): boolean => t.includes('ssl')) || /^\s*ssl_certificate\s/m.test(content),
+        certName: content.match(/^\s*ssl_certificate\s+\/etc\/letsencrypt\/live\/([^/\s;]+)\//m)?.[1] ?? null,
         parseError: false
     }
 }
@@ -105,7 +108,7 @@ export async function listVhosts(): Promise<VhostInfo[]> {
             } catch {
                 return {
                     name: file, enabled, serverNames: [], listenPorts: [], proxyTargets: [],
-                    proxyPorts: [], root: null, ssl: false, parseError: true
+                    proxyPorts: [], root: null, ssl: false, certName: null, parseError: true
                 }
             }
         })
@@ -141,7 +144,18 @@ export interface VhostConfig {
     ssl: boolean
 }
 
-export async function createVhost(cfg: VhostConfig) {
+export interface VhostCreateResult {
+    name: string
+    /** HTTPS installed by certbot */
+    secured: boolean
+    warnings: string[]
+}
+
+/**
+ * Writes an HTTP-only vhost. With `ssl`, the vhost is enabled and certbot then adds HTTPS
+ * (and the HTTP -> HTTPS redirect) to it, see secureVhost().
+ */
+export async function createVhost(cfg: VhostConfig): Promise<VhostCreateResult> {
     assertSafeName(cfg.name)
     assertHost(cfg.serverName)
     if (cfg.mode === 'proxy') {
@@ -149,59 +163,57 @@ export async function createVhost(cfg: VhostConfig) {
     } else {
         assertRoot(cfg.root)
     }
-    let conf = ''
-
-    if (cfg.ssl) {
-        conf = `server {
-    listen 80;
-    server_name ${cfg.serverName};
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name ${cfg.serverName};
-
-    ssl_certificate /etc/letsencrypt/live/${cfg.serverName}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${cfg.serverName}/privkey.pem;
-
-    ${cfg.mode === 'proxy'
-                ? `location / {
-        proxy_pass http://localhost:${cfg.proxyPort};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }`
-                : `root ${cfg.root};
-    index index.html;
-    location / {
-        try_files $uri $uri/ =404;
-    }`}
-}`
-    } else {
-        conf = `server {
-    listen 80;
-    server_name ${cfg.serverName};
-
-    ${cfg.mode === 'proxy'
-                ? `location / {
-        proxy_pass http://localhost:${cfg.proxyPort};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }`
-                : `root ${cfg.root};
-    index index.html;
-    location / {
-        try_files $uri $uri/ =404;
-    }`}
-}`
+    const availablePath: string = path.join(SITES_AVAILABLE, cfg.name)
+    if (await pathExists(availablePath)) {
+        throw new VhostError(`Le vhost "${cfg.name}" existe déjà`, 409)
     }
 
-    const tmpFile = path.join(os.tmpdir(), `nginx-${cfg.name}-${Date.now()}.conf`)
-    await fs.writeFile(tmpFile, conf, 'utf-8')
-    await execAsync(`sudo mv ${tmpFile} ${path.join(SITES_AVAILABLE, cfg.name)}`)
-    await execAsync(`sudo chmod 644 ${path.join(SITES_AVAILABLE, cfg.name)}`)
-}
+    const conf = `server {
+    listen 80;
+    server_name ${cfg.serverName};
 
+    ${cfg.mode === 'proxy'
+            ? `location / {
+        proxy_pass http://localhost:${cfg.proxyPort};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }`
+            : `root ${cfg.root};
+    index index.html;
+    location / {
+        try_files $uri $uri/ =404;
+    }`}
+}
+`
+    await writeAvailable(cfg.name, conf)
+
+    if (!cfg.ssl) {
+        return { name: cfg.name, secured: false, warnings: [] }
+    }
+
+    // certbot only edits enabled vhosts: enable it and make sure nginx accepts it first
+    const enabledPath: string = path.join(SITES_ENABLED, cfg.name)
+    await runSudo(['ln', '-s', availablePath, enabledPath])
+    try {
+        await runSudo(['nginx', '-t'])
+    } catch (error: unknown) {
+        await runSudo(['rm', enabledPath]).catch((): void => undefined)
+        throw new VhostError(`Vhost créé mais nginx -t a échoué, vhost désactivé : ${extractStderr(error)}`, 422)
+    }
+    await runSudo(['systemctl', 'reload', 'nginx'])
+
+    try {
+        await secureVhost(cfg.name)
+        return { name: cfg.name, secured: true, warnings: [] }
+    } catch (error: unknown) {
+        const reason: string = error instanceof Error ? error.message : 'erreur inconnue'
+        return {
+            name: cfg.name,
+            secured: false,
+            warnings: [`Vhost créé et activé en HTTP seulement, HTTPS non installé : ${reason}`],
+        }
+    }
+}
 
 export class VhostError extends Error {
     public readonly status: number
@@ -449,11 +461,141 @@ export async function updateVhost(name: string, update: VhostUpdate): Promise<Vh
         await runSudo(['rm', oldPath])
     }
 
-    if (domainChanged && info.ssl) {
-        warnings.push(
-            'Les chemins ssl_certificate pointent encore vers l\'ancien domaine : le certificat ne correspond plus (voir étape 3)'
-        )
+    if (domainChanged && info.ssl && update.serverName !== undefined) {
+        const newDomain: string = update.serverName
+        const certs: Certificate[] = await listCertificates().catch((): Certificate[] => [])
+        const current: Certificate | undefined = certs.find((c: Certificate): boolean => c.name === info.certName)
+        if (!current || !coversDomain(current, newDomain)) {
+            warnings.push(
+                `Le certificat ${info.certName ?? 'actuel'} ne couvre pas ${newDomain} : utilisez l'action « Certificat » pour en installer un`
+            )
+        }
     }
 
     return { name: newName, validated: enabled, warnings }
+}
+
+// ------------------------------------------------------------------ certificates (certbot)
+
+const CERTBOT_TIMEOUT_MS: number = 180_000
+const DAY_MS: number = 86_400_000
+
+export interface Certificate {
+    name: string
+    domains: string[]
+    /** ISO date */
+    expiry: string | null
+    daysLeft: number | null
+    valid: boolean
+}
+
+export interface SecureResult {
+    name: string
+    certName: string
+    /** true when a new certificate was requested, false when an existing one was installed */
+    issued: boolean
+}
+
+/** Parses the output of `certbot certificates`. */
+export function parseCertbotCertificates(output: string, now: number = Date.now()): Certificate[] {
+    return output
+        .split(/^\s*Certificate Name:\s*/m)
+        .slice(1)
+        .map((block: string): Certificate => {
+            const field = (label: string): string | null =>
+                block.match(new RegExp(`^\\s*${label}:\\s*(.+)$`, 'm'))?.[1].trim() ?? null
+            const expiryField: string | null = field('Expiry Date')
+            // e.g. "2027-02-14 10:00:00+00:00 (VALID: 89 days)" or "... (INVALID: EXPIRED)"
+            const dateMatch: RegExpMatchArray | null = expiryField?.match(/^(\S+)\s+(\S+)/) ?? null
+            const time: number = dateMatch ? Date.parse(`${dateMatch[1]}T${dateMatch[2]}`) : NaN
+            return {
+                name: block.split('\n')[0].trim(),
+                domains: (field('Domains') ?? '').split(/\s+/).filter(Boolean),
+                expiry: Number.isNaN(time) ? null : new Date(time).toISOString(),
+                daysLeft: Number.isNaN(time) ? null : Math.floor((time - now) / DAY_MS),
+                valid: /\(VALID/.test(expiryField ?? ''),
+            }
+        })
+}
+
+/** Exact match, or `*.example.com` matching a single label (`a.example.com`, not `a.b.example.com`). */
+export function coversDomain(cert: Pick<Certificate, 'domains'>, host: string): boolean {
+    const target: string = host.toLowerCase()
+    return cert.domains.some((domain: string): boolean => {
+        const d: string = domain.toLowerCase()
+        if (d === target) {
+            return true
+        }
+        if (!d.startsWith('*.')) {
+            return false
+        }
+        const dot: number = target.indexOf('.')
+        return dot > 0 && target.slice(dot + 1) === d.slice(2)
+    })
+}
+
+/** The valid certificate covering every domain that expires last, if any. */
+export function findCoveringCertificate(certs: Certificate[], domains: string[]): Certificate | null {
+    const candidates: Certificate[] = certs
+        .filter((c: Certificate): boolean => c.valid && domains.every((d: string): boolean => coversDomain(c, d)))
+        .sort((a: Certificate, b: Certificate): number => (b.daysLeft ?? 0) - (a.daysLeft ?? 0))
+    return candidates[0] ?? null
+}
+
+export async function listCertificates(): Promise<Certificate[]> {
+    const { stdout, stderr } = await execFileAsync('sudo', ['certbot', 'certificates'], {
+        timeout: CERTBOT_TIMEOUT_MS,
+    })
+    return parseCertbotCertificates(`${stdout}\n${stderr}`)
+}
+
+function lastLines(text: string, count: number): string {
+    return text.trim().split('\n').slice(-count).join(' ')
+}
+
+/**
+ * Adds HTTPS to an enabled vhost with `certbot --nginx` (certbot edits the vhost file: listen 443,
+ * ssl_certificate, HTTP -> HTTPS redirect). An existing certificate covering the domains (e.g. the
+ * *.dvachette.fr wildcard) is installed as is; otherwise a new one is requested over HTTP.
+ * certbot rolls its changes back itself when it fails.
+ */
+export async function secureVhost(name: string): Promise<SecureResult> {
+    assertSafeName(name)
+    const availablePath: string = path.join(SITES_AVAILABLE, name)
+    let raw: string
+    try {
+        raw = await fs.readFile(availablePath, 'utf-8')
+    } catch {
+        throw new VhostError('Vhost introuvable', 404)
+    }
+    if (!(await pathExists(path.join(SITES_ENABLED, name)))) {
+        throw new VhostError('Le vhost doit être activé pour que certbot le trouve', 409)
+    }
+
+    const info: VhostInfo = parseVhost(name, true, raw)
+    const domains: string[] = info.serverNames.filter(
+        (d: string): boolean => HOST_REGEX.test(d) && d.includes('.')
+    )
+    if (domains.length === 0) {
+        throw new VhostError('Aucun server_name utilisable pour un certificat', 400)
+    }
+
+    const covering: Certificate | null = findCoveringCertificate(await listCertificates(), domains)
+    const domainArgs: string[] = domains.flatMap((d: string): string[] => ['-d', d])
+    const email: string | undefined = process.env.CERTBOT_EMAIL
+    const args: string[] = covering
+        ? ['certbot', 'install', '--nginx', '--cert-name', covering.name, ...domainArgs, '--redirect', '--non-interactive']
+        : [
+            'certbot', '--nginx', '--cert-name', domains[0], ...domainArgs,
+            '--redirect', '--keep-until-expiring', '--non-interactive', '--agree-tos',
+            ...(email ? ['--email', email] : ['--register-unsafely-without-email']),
+        ]
+
+    try {
+        await execFileAsync('sudo', args, { timeout: CERTBOT_TIMEOUT_MS })
+    } catch (error: unknown) {
+        throw new VhostError(`certbot a échoué : ${lastLines(extractStderr(error), 3)}`, 502)
+    }
+
+    return { name, certName: covering?.name ?? domains[0], issued: covering === null }
 }
