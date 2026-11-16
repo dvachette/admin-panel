@@ -115,8 +115,28 @@ $SERVICE_USER ALL=(root) NOPASSWD: $HELPER_DEST
 $DEPLOY_USER ALL=(root) NOPASSWD: $INSTALL_SCRIPT, /usr/bin/systemctl restart $SERVICE_NAME
 EOF
 visudo -cqf "$sudoers_tmp" || die "generated sudoers file is invalid, keeping the current one"
+
+# The deploy user's own sudo rights (e.g. the `sudo` group) must survive: only this file is replaced,
+# and it only adds rules, but check it and restore the previous file if they were lost.
+has_full_sudo() {
+    sudo -l -U "$DEPLOY_USER" 2>/dev/null | grep -Eq '^[[:space:]]*\(ALL( : ALL)?\) ALL[[:space:]]*$'
+}
+deploy_full_sudo_before=false
+has_full_sudo && deploy_full_sudo_before=true
+sudoers_backup=$(mktemp)
+[[ -f $SUDOERS_FILE ]] && cp -p "$SUDOERS_FILE" "$sudoers_backup"
+
 install -o root -g root -m 0440 "$sudoers_tmp" "$SUDOERS_FILE"
-visudo -cq || die "sudoers configuration is invalid after installing $SUDOERS_FILE"
+if ! visudo -cq || { $deploy_full_sudo_before && ! has_full_sudo; }; then
+    if [[ -s $sudoers_backup ]]; then
+        install -o root -g root -m 0440 "$sudoers_backup" "$SUDOERS_FILE"
+    else
+        rm -f "$SUDOERS_FILE"
+    fi
+    die "installing $SUDOERS_FILE broke sudo or $DEPLOY_USER's sudo rights: previous file restored"
+fi
+rm -f "$sudoers_backup"
+$deploy_full_sudo_before && log "$DEPLOY_USER keeps its full sudo rights"
 
 # ------------------------------------------------------------------ systemd unit
 unit_tmp=$(mktemp)
