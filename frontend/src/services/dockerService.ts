@@ -1,7 +1,10 @@
 import axios from 'axios'
+import type { Container } from '@/types/dockerTypes'
 
-function getStatsStream(id: string): EventSource {
-  return new EventSource(`/api/docker/containers/${id}/stats`, { withCredentials: true })
+/** One SSE connection for all the given containers (events carry the container id) */
+function getStatsStream(ids: string[]): EventSource {
+  const query = encodeURIComponent(ids.join(','))
+  return new EventSource(`/api/docker/stats?ids=${query}`, { withCredentials: true })
 }
 
 async function deleteContainer(id: string): Promise<void> {
@@ -9,7 +12,19 @@ async function deleteContainer(id: string): Promise<void> {
 }
 
 async function getContainers() {
-  return await axios.get('/api/docker/containers', { withCredentials: true })
+  return await axios.get<Container[]>('/api/docker/containers', { withCredentials: true })
+}
+
+async function restartContainer(id: string) {
+  await axios.post(`/api/docker/containers/${id}/restart`, {}, { withCredentials: true })
+}
+
+async function getLogs(id: string, tail: number): Promise<string> {
+  const { data } = await axios.get<{ logs: string }>(`/api/docker/containers/${id}/logs`, {
+    params: { tail },
+    withCredentials: true,
+  })
+  return data.logs
 }
 
 async function startContainer(id: string) {
@@ -26,5 +41,7 @@ export function useDockerService() {
     getContainers,
     startContainer,
     stopContainer,
+    restartContainer,
+    getLogs,
   }
 }
