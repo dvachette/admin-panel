@@ -1,18 +1,13 @@
-import { exec, execFile } from 'child_process'
-import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
-import os from 'os'
-
-const execAsync = promisify(exec)
-const execFileAsync = promisify(execFile)
+import { runHelper } from './privileged'
 
 const SITES_AVAILABLE = '/etc/nginx/sites-available'
 const SITES_ENABLED = '/etc/nginx/sites-enabled'
 
 export async function getNginxStatus(): Promise<'active' | 'inactive'> {
     try {
-        const { stdout } = await execAsync('sudo systemctl is-active nginx')
+        const { stdout } = await runHelper(['nginx-status'])
         return stdout.trim() === 'active' ? 'active' : 'inactive'
     } catch {
         return 'inactive'
@@ -20,15 +15,15 @@ export async function getNginxStatus(): Promise<'active' | 'inactive'> {
 }
 
 export async function startNginx() {
-    await execAsync('sudo systemctl start nginx')
+    await runHelper(['nginx-start'])
 }
 
 export async function stopNginx() {
-    await execAsync('sudo systemctl stop nginx')
+    await runHelper(['nginx-stop'])
 }
 
 export async function reloadNginx() {
-    await execAsync('sudo systemctl reload nginx')
+    await runHelper(['nginx-reload'])
 }
 
 export interface VhostInfo {
@@ -118,21 +113,17 @@ export async function listVhosts(): Promise<VhostInfo[]> {
 
 export async function enableVhost(name: string) {
     assertSafeName(name)
-    const src = path.join(SITES_AVAILABLE, name)
-    const dest = path.join(SITES_ENABLED, name)
-    await execAsync(`sudo ln -s ${src} ${dest}`)
+    await runHelper(['vhost-enable', name])
 }
 
 export async function disableVhost(name: string) {
     assertSafeName(name)
-    const dest = path.join(SITES_ENABLED, name)
-    await execAsync(`sudo rm ${dest}`)
+    await runHelper(['vhost-disable', name])
 }
 
 export async function deleteVhost(name: string) {
     assertSafeName(name)
-    await disableVhost(name).catch(() => { })
-    await execAsync(`sudo rm ${path.join(SITES_AVAILABLE, name)}`)
+    await runHelper(['vhost-delete', name])
 }
 
 export interface VhostConfig {
@@ -192,15 +183,14 @@ export async function createVhost(cfg: VhostConfig): Promise<VhostCreateResult> 
     }
 
     // certbot only edits enabled vhosts: enable it and make sure nginx accepts it first
-    const enabledPath: string = path.join(SITES_ENABLED, cfg.name)
-    await runSudo(['ln', '-s', availablePath, enabledPath])
+    await runHelper(['vhost-enable', cfg.name])
     try {
-        await runSudo(['nginx', '-t'])
+        await runHelper(['nginx-test'])
     } catch (error: unknown) {
-        await runSudo(['rm', enabledPath]).catch((): void => undefined)
+        await runHelper(['vhost-disable', cfg.name]).catch((): void => undefined)
         throw new VhostError(`Vhost créé mais nginx -t a échoué, vhost désactivé : ${extractStderr(error)}`, 422)
     }
-    await runSudo(['systemctl', 'reload', 'nginx'])
+    await runHelper(['nginx-reload'])
 
     try {
         await secureVhost(cfg.name)
@@ -290,10 +280,6 @@ function validateUpdate(update: VhostUpdate): void {
     }
 }
 
-async function runSudo(args: string[]): Promise<void> {
-    await execFileAsync('sudo', args)
-}
-
 async function pathExists(target: string): Promise<boolean> {
     return fs.access(target).then((): boolean => true).catch((): boolean => false)
 }
@@ -309,11 +295,12 @@ function extractStderr(error: unknown): string {
 }
 
 async function writeAvailable(name: string, content: string): Promise<void> {
-    const tmpFile: string = path.join(os.tmpdir(), `nginx-${name}-${Date.now()}.conf`)
-    const dest: string = path.join(SITES_AVAILABLE, name)
-    await fs.writeFile(tmpFile, content, 'utf-8')
-    await runSudo(['mv', tmpFile, dest])
-    await runSudo(['chmod', '644', dest])
+    try {
+        await runHelper(['vhost-write', name], { input: content })
+    } catch (error: unknown) {
+        // The helper refuses some directives (log/include paths outside nginx's directories...)
+        throw new VhostError(`Écriture du vhost refusée : ${extractStderr(error)}`, 400)
+    }
 }
 
 function replaceValues(
@@ -427,7 +414,6 @@ export async function updateVhost(name: string, update: VhostUpdate): Promise<Vh
     const newName: string = update.serverName !== undefined && domainChanged ? update.serverName : name
     const renamed: boolean = newName !== name
     const newPath: string = path.join(SITES_AVAILABLE, newName)
-    const newLink: string = path.join(SITES_ENABLED, newName)
 
     if (renamed && (await pathExists(newPath))) {
         throw new VhostError(`Le vhost "${newName}" existe déjà`, 409)
@@ -435,16 +421,15 @@ export async function updateVhost(name: string, update: VhostUpdate): Promise<Vh
 
     await writeAvailable(newName, newContent)
     if (renamed && enabled) {
-        await runSudo(['ln', '-s', newPath, newLink])
+        await runHelper(['vhost-enable', newName])
     }
 
     if (enabled) {
         try {
-            await runSudo(['nginx', '-t'])
+            await runHelper(['nginx-test'])
         } catch (error: unknown) {
             if (renamed) {
-                await runSudo(['rm', newLink]).catch((): void => undefined)
-                await runSudo(['rm', newPath]).catch((): void => undefined)
+                await runHelper(['vhost-delete', newName]).catch((): void => undefined)
             } else {
                 await writeAvailable(name, oldContent)
             }
@@ -455,10 +440,7 @@ export async function updateVhost(name: string, update: VhostUpdate): Promise<Vh
     }
 
     if (renamed) {
-        if (enabled) {
-            await runSudo(['rm', oldLink])
-        }
-        await runSudo(['rm', oldPath])
+        await runHelper(['vhost-delete', name])
     }
 
     if (domainChanged && info.ssl && update.serverName !== undefined) {
@@ -543,9 +525,7 @@ export function findCoveringCertificate(certs: Certificate[], domains: string[])
 }
 
 export async function listCertificates(): Promise<Certificate[]> {
-    const { stdout, stderr } = await execFileAsync('sudo', ['certbot', 'certificates'], {
-        timeout: CERTBOT_TIMEOUT_MS,
-    })
+    const { stdout, stderr } = await runHelper(['cert-list'], { timeoutMs: CERTBOT_TIMEOUT_MS })
     return parseCertbotCertificates(`${stdout}\n${stderr}`)
 }
 
@@ -581,18 +561,14 @@ export async function secureVhost(name: string): Promise<SecureResult> {
     }
 
     const covering: Certificate | null = findCoveringCertificate(await listCertificates(), domains)
-    const domainArgs: string[] = domains.flatMap((d: string): string[] => ['-d', d])
     const email: string | undefined = process.env.CERTBOT_EMAIL
+    // The helper builds the certbot command line itself (fixed options, no hooks)
     const args: string[] = covering
-        ? ['certbot', 'install', '--nginx', '--cert-name', covering.name, ...domainArgs, '--redirect', '--non-interactive']
-        : [
-            'certbot', '--nginx', '--cert-name', domains[0], ...domainArgs,
-            '--redirect', '--keep-until-expiring', '--non-interactive', '--agree-tos',
-            ...(email ? ['--email', email] : ['--register-unsafely-without-email']),
-        ]
+        ? ['cert-install', covering.name, ...domains]
+        : ['cert-issue', ...(email ? ['--email', email] : []), ...domains]
 
     try {
-        await execFileAsync('sudo', args, { timeout: CERTBOT_TIMEOUT_MS })
+        await runHelper(args, { timeoutMs: CERTBOT_TIMEOUT_MS })
     } catch (error: unknown) {
         throw new VhostError(`certbot a échoué : ${lastLines(extractStderr(error), 3)}`, 502)
     }

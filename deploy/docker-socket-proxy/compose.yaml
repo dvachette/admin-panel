@@ -1,0 +1,36 @@
+# Filtering proxy in front of the Docker socket: the admin backend only gets the API calls it uses
+# (list, inspect, logs, stats, start/stop/restart, remove). Container creation, exec, images,
+# volumes... are refused, so a compromised backend cannot `docker run -v /:/host`.
+#
+#   DOCKER_GID=$(getent group docker | cut -d: -f3) docker compose up -d
+#
+# Then set DOCKER_HOST=tcp://127.0.0.1:2375 in backend/.env and remove the backend user from the
+# docker group.
+services:
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1.13.2
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    # Listens on the host loopback only (127.0.0.1:2375), never expose it
+    network_mode: host
+    # nobody + docker group, to read the socket
+    user: "65534:${DOCKER_GID:?set DOCKER_GID to the docker group id}"
+    mem_limit: 64M
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Regexes are anchored (^...$). The API version prefix (/v1.xx) is optional: dockerode
+    # omits it unless a version is configured. Container references are ids or names.
+    command:
+      - -loglevel=info
+      - -listenip=127.0.0.1
+      - -proxyport=2375
+      - -allowfrom=127.0.0.1/32
+      - -allowGET=(/v1\.[0-9]{1,2})?/containers/(json|[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs|stats))
+      - -allowPOST=(/v1\.[0-9]{1,2})?/containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(start|stop|restart)
+      - -allowDELETE=(/v1\.[0-9]{1,2})?/containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*
+      - -shutdowngracetime=5

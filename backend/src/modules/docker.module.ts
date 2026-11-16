@@ -1,7 +1,20 @@
 import Dockerode from "dockerode";
 import { Readable } from "stream";
 
-const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
+/**
+ * DOCKER_HOST=tcp://127.0.0.1:2375 goes through the filtering socket proxy
+ * (deploy/docker-socket-proxy); otherwise the socket is used directly (local development).
+ */
+function createClient(): Dockerode {
+    const host = process.env.DOCKER_HOST;
+    if (host?.startsWith("tcp://")) {
+        const url = new URL(host.replace(/^tcp:/, "http:"));
+        return new Dockerode({ host: url.hostname, port: Number(url.port || 2375), protocol: "http" });
+    }
+    return new Dockerode({ socketPath: host?.startsWith("unix://") ? host.slice("unix://".length) : "/var/run/docker.sock" });
+}
+
+const docker = createClient();
 
 export class DockerError extends Error {
     constructor(public status: number, message: string) {

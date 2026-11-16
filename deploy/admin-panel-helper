@@ -1,0 +1,275 @@
+#!/bin/bash
+# Privileged helper of the admin panel backend: the only command the backend may run with sudo.
+#
+# Every sub-command takes validated arguments and builds paths itself, so being allowed to run
+# this script does not give arbitrary root access (unlike `sudo rm`, `sudo tee`, `sudo certbot`...).
+#
+# Install it as root, from a copy (never run it from the git checkout, which the deploy user can modify):
+#   sudo install -o root -g root -m 0755 deploy/admin-panel-helper /usr/local/sbin/admin-panel-helper
+# Sudoers (visudo -f /etc/sudoers.d/admin-panel):
+#   admin-backend ALL=(root) NOPASSWD: /usr/local/sbin/admin-panel-helper
+#
+# Usage: admin-panel-helper <command> [args]   (run without arguments for the list)
+
+set -euo pipefail
+umask 022
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+
+readonly SITES_AVAILABLE=/etc/nginx/sites-available
+readonly SITES_ENABLED=/etc/nginx/sites-enabled
+readonly MAX_VHOST_BYTES=65536
+# Rules on these are never denied/deleted from the panel, to avoid locking SSH out
+readonly PROTECTED_PORTS_REGEX='(^|[^0-9])22(/tcp)?([^0-9]|$)|OpenSSH'
+
+die() {
+    echo "admin-panel-helper: $*" >&2
+    exit 2
+}
+
+usage() {
+    cat >&2 <<'EOF'
+Usage: admin-panel-helper <command> [args]
+
+  nginx-status | nginx-start | nginx-stop | nginx-reload | nginx-test
+  vhost-write <name>            vhost content on stdin -> /etc/nginx/sites-available/<name>
+  vhost-enable <name> | vhost-disable <name> | vhost-delete <name>
+  cert-list
+  cert-install <cert-name> <domain>...           certbot install --nginx (existing certificate)
+  cert-issue [--email <email>] <domain>...       certbot --nginx (new certificate, HTTP challenge)
+  ufw-status                                     ufw status verbose
+  ufw-rules                                      ufw status numbered
+  ufw-allow <port> <tcp|udp> [<source ip/cidr>]
+  ufw-deny <port> <tcp|udp> [<source ip/cidr>]
+  ufw-delete <rule number>
+EOF
+    exit 2
+}
+
+# ------------------------------------------------------------------ validation
+
+valid_name() {
+    [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$ && $1 != *..* ]]
+}
+
+valid_domain() {
+    [[ $1 =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ && $1 == *.* && $1 != *..* ]]
+}
+
+valid_port() {
+    [[ $1 =~ ^[0-9]{1,5}$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
+valid_proto() {
+    [[ $1 == tcp || $1 == udp ]]
+}
+
+valid_source() {
+    local ip=${1%/*} mask=
+    [[ $1 == */* ]] && mask=${1#*/}
+    if [[ $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+        local octet
+        for octet in "${BASH_REMATCH[@]:1}"; do ((10#$octet <= 255)) || return 1; done
+        [[ -z $mask ]] || { [[ $mask =~ ^[0-9]{1,2}$ ]] && ((10#$mask <= 32)); }
+    elif [[ $ip =~ ^[0-9A-Fa-f:]+$ && $ip == *:* ]]; then
+        [[ -z $mask ]] || { [[ $mask =~ ^[0-9]{1,3}$ ]] && ((10#$mask <= 128)); }
+    else
+        return 1
+    fi
+}
+
+valid_email() {
+    [[ $1 =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ && $1 != -* ]]
+}
+
+require_name() {
+    [[ $# -eq 1 ]] || usage
+    valid_name "$1" || die "invalid vhost name: $1"
+}
+
+# ------------------------------------------------------------------ vhost content checks
+
+# nginx's master process runs as root and opens log files, temp paths, certificates, includes...
+# as root: a vhost could otherwise write or read any file (e.g. `access_log /etc/cron.d/x`).
+# Only the paths the panel and certbot actually use are accepted.
+check_path_prefix() {
+    local directive=$1 value=$2
+    shift 2
+    [[ $value != *..* ]] || die "$directive: '..' is not allowed in $value"
+    local prefix
+    for prefix in "$@"; do
+        [[ $value == "$prefix"* ]] && return 0
+    done
+    die "$directive: path not allowed: $value (allowed: $*)"
+}
+
+check_vhost_content() {
+    local content=$1 statement directive value
+    # Drop comments, then look at each statement (several can share a line). A '#' after a quote
+    # may be inside a string ("...#..."), so such lines are kept whole: stricter, never looser.
+    while IFS= read -r statement; do
+        statement=${statement#"${statement%%[![:space:]]*}"}
+        [[ -n $statement ]] || continue
+        directive=${statement%%[[:space:]]*}
+        value=${statement#"$directive"}
+        value=${value#"${value%%[![:space:]]*}"}
+        value=${value%%[[:space:]]*}
+        value=${value//\"/}
+        value=${value//\'/}
+        case $directive in
+            load_module | perl* | *lua* | *njs* | js_*)
+                die "directive not allowed: $directive" ;;
+            *_temp_path | ssl_password_file | auth_basic_user_file | ssl_stapling_file \
+                | ssl_session_ticket_key | ssl_crl | ssl_client_certificate | ssl_trusted_certificate)
+                die "directive not allowed: $directive" ;;
+            access_log | error_log)
+                [[ $value == off || $value == stderr || $value == syslog:* ]] \
+                    || check_path_prefix "$directive" "$value" /var/log/nginx/ ;;
+            include)
+                check_path_prefix "$directive" "$value" /etc/nginx/ /etc/letsencrypt/ ;;
+            ssl_certificate | ssl_certificate_key | ssl_dhparam)
+                check_path_prefix "$directive" "$value" /etc/letsencrypt/ ;;
+        esac
+    done < <(printf '%s\n' "$content" | sed -E "/^[^\"']*#/ s/#.*$//" | tr ';{}' '\n')
+}
+
+# ------------------------------------------------------------------ commands
+
+cmd_vhost_write() {
+    require_name "$@"
+    local name=$1 content tmp
+    # Read one byte more than allowed to detect oversized input
+    content=$(head -c $((MAX_VHOST_BYTES + 1)) && echo x)
+    content=${content%x}
+    ((${#content} <= MAX_VHOST_BYTES)) || die "vhost content larger than $MAX_VHOST_BYTES bytes"
+    [[ -n ${content//[[:space:]]/} ]] || die "empty vhost content"
+    check_vhost_content "$content"
+    [[ ! -e $SITES_AVAILABLE/$name || -f $SITES_AVAILABLE/$name ]] || die "$name is not a regular file"
+    tmp=$(mktemp "$SITES_AVAILABLE/.admin-panel.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    printf '%s' "$content" > "$tmp"
+    chmod 0644 "$tmp"
+    mv -fT "$tmp" "$SITES_AVAILABLE/$name"
+    trap - EXIT
+}
+
+cmd_vhost_enable() {
+    require_name "$@"
+    local name=$1
+    [[ -f $SITES_AVAILABLE/$name ]] || die "no vhost $name in $SITES_AVAILABLE"
+    if [[ -L $SITES_ENABLED/$name ]]; then
+        [[ $(readlink "$SITES_ENABLED/$name") == "$SITES_AVAILABLE/$name" ]] && return 0
+        die "$SITES_ENABLED/$name already links elsewhere"
+    fi
+    [[ ! -e $SITES_ENABLED/$name ]] || die "$SITES_ENABLED/$name exists and is not a symlink"
+    ln -sT "$SITES_AVAILABLE/$name" "$SITES_ENABLED/$name"
+}
+
+cmd_vhost_disable() {
+    require_name "$@"
+    local name=$1
+    if [[ -L $SITES_ENABLED/$name ]]; then
+        rm -f -- "$SITES_ENABLED/$name"
+    elif [[ -e $SITES_ENABLED/$name ]]; then
+        die "$SITES_ENABLED/$name is not a symlink, remove it by hand"
+    fi
+}
+
+cmd_vhost_delete() {
+    require_name "$@"
+    local name=$1
+    cmd_vhost_disable "$name"
+    if [[ -f $SITES_AVAILABLE/$name && ! -L $SITES_AVAILABLE/$name ]]; then
+        rm -f -- "$SITES_AVAILABLE/$name"
+    elif [[ -e $SITES_AVAILABLE/$name || -L $SITES_AVAILABLE/$name ]]; then
+        die "$SITES_AVAILABLE/$name is not a regular file"
+    fi
+}
+
+require_domains() {
+    [[ $# -ge 1 ]] || usage
+    local domain
+    for domain in "$@"; do
+        valid_domain "$domain" || die "invalid domain: $domain"
+    done
+}
+
+cmd_cert_install() {
+    [[ $# -ge 2 ]] || usage
+    local cert_name=$1
+    shift
+    valid_name "$cert_name" || die "invalid certificate name: $cert_name"
+    require_domains "$@"
+    local args=() domain
+    for domain in "$@"; do args+=(-d "$domain"); done
+    exec certbot install --nginx --cert-name "$cert_name" "${args[@]}" --redirect --non-interactive
+}
+
+cmd_cert_issue() {
+    local email_args=(--register-unsafely-without-email)
+    if [[ ${1:-} == --email ]]; then
+        [[ $# -ge 2 ]] || usage
+        valid_email "$2" || die "invalid email: $2"
+        email_args=(--email "$2")
+        shift 2
+    fi
+    require_domains "$@"
+    local args=() domain
+    for domain in "$@"; do args+=(-d "$domain"); done
+    exec certbot --nginx --cert-name "$1" "${args[@]}" --redirect --keep-until-expiring \
+        --non-interactive --agree-tos "${email_args[@]}"
+}
+
+cmd_ufw_rule() {
+    local action=$1
+    shift
+    [[ $# -eq 2 || $# -eq 3 ]] || usage
+    local port=$1 proto=$2 source=${3:-}
+    valid_port "$port" || die "invalid port: $port"
+    valid_proto "$proto" || die "invalid protocol: $proto"
+    if [[ $action == deny && $port =~ $PROTECTED_PORTS_REGEX ]]; then
+        die "refusing to deny port $port: it could lock SSH out (do it over SSH)"
+    fi
+    if [[ -n $source ]]; then
+        valid_source "$source" || die "invalid source: $source"
+        exec ufw "$action" proto "$proto" from "$source" to any port "$port"
+    fi
+    exec ufw "$action" "$port/$proto"
+}
+
+cmd_ufw_delete() {
+    [[ $# -eq 1 && $1 =~ ^[0-9]{1,4}$ ]] || usage
+    local number=$((10#$1)) rule
+    rule=$(ufw status numbered | grep -E "^\[ *$number\]" || true)
+    [[ -n $rule ]] || die "no ufw rule #$number"
+    # Match on the rule itself, not on its "[ n]" number
+    if [[ ${rule#*]} =~ $PROTECTED_PORTS_REGEX ]]; then
+        die "refusing to delete an SSH rule from the panel (do it over SSH): $rule"
+    fi
+    exec ufw --force delete "$number"
+}
+
+[[ $# -ge 1 ]] || usage
+command=$1
+shift
+
+case $command in
+    nginx-status) [[ $# -eq 0 ]] || usage; exec systemctl is-active nginx ;;
+    nginx-start) [[ $# -eq 0 ]] || usage; exec systemctl start nginx ;;
+    nginx-stop) [[ $# -eq 0 ]] || usage; exec systemctl stop nginx ;;
+    nginx-reload) [[ $# -eq 0 ]] || usage; exec systemctl reload nginx ;;
+    nginx-test) [[ $# -eq 0 ]] || usage; exec nginx -t ;;
+    vhost-write) cmd_vhost_write "$@" ;;
+    vhost-enable) cmd_vhost_enable "$@" ;;
+    vhost-disable) cmd_vhost_disable "$@" ;;
+    vhost-delete) cmd_vhost_delete "$@" ;;
+    cert-list) [[ $# -eq 0 ]] || usage; exec certbot certificates ;;
+    cert-install) cmd_cert_install "$@" ;;
+    cert-issue) cmd_cert_issue "$@" ;;
+    ufw-status) [[ $# -eq 0 ]] || usage; exec ufw status verbose ;;
+    ufw-rules) [[ $# -eq 0 ]] || usage; exec ufw status numbered ;;
+    ufw-allow) cmd_ufw_rule allow "$@" ;;
+    ufw-deny) cmd_ufw_rule deny "$@" ;;
+    ufw-delete) cmd_ufw_delete "$@" ;;
+    *) usage ;;
+esac
