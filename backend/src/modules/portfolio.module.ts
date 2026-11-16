@@ -2,22 +2,47 @@ import fs from 'fs/promises'
 import path from 'path'
 import multer from 'multer'
 
+const API_URL = (process.env.PORTFOLIO_API_URL || 'http://127.0.0.1:3003').replace(/\/+$/, '')
+const API_TOKEN = process.env.PORTFOLIO_API_TOKEN
 
-const DATA_PATH = process.env.PORTFOLIO_DATA_PATH!
-
-function projectsFile() {
-  return path.join(DATA_PATH, 'projects.json')
+/** Error returned by the portfolio API, carrying its HTTP status. */
+export class PortfolioApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+  }
 }
 
+async function request<T>(method: string, route: string, body?: unknown): Promise<T> {
+  if (!API_TOKEN) throw new PortfolioApiError(503, 'PORTFOLIO_API_TOKEN is not configured')
 
-async function readJSON<T>(file: string): Promise<T> {
-  const content = await fs.readFile(file, 'utf-8')
-  return JSON.parse(content) as T
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}/admin${route}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${API_TOKEN}`,
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw new PortfolioApiError(502, 'Portfolio API is unreachable')
+  }
+
+  if (res.status === 204) return undefined as T
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new PortfolioApiError(res.status, data?.error ?? `Portfolio API responded ${res.status}`)
+  }
+  return data as T
 }
 
-async function writeJSON(file: string, data: unknown) {
-  await fs.writeFile(file, JSON.stringify(data, null, 4), 'utf-8')
+/** The portfolio API rejects empty strings: drop them so optional fields are simply omitted. */
+function withoutEmptyStrings<T extends object>(obj: T): T {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== '')) as T
 }
+
+const enc = encodeURIComponent
 
 export interface Project {
   id: string
@@ -60,83 +85,48 @@ export interface Section {
 }
 
 export async function listProjects(): Promise<Project[]> {
-  return readJSON<Project[]>(projectsFile())
+  return request('GET', '/projects')
 }
 
 export async function createProject(project: Project) {
-  const projects = await listProjects()
-  if (projects.find(p => p.id === project.id)) {
-    throw new Error('Project with this id already exists')
-  }
-  projects.push(project)
-  await writeJSON(projectsFile(), projects)
+  await request('POST', '/projects', withoutEmptyStrings(project))
 }
 
-export async function updateProject(id: string, data: Partial<Project>) {
-  const projects = await listProjects()
-  const idx = projects.findIndex(p => p.id === id)
-  if (idx === -1) throw new Error('Project not found')
-  projects[idx] = { ...projects[idx], ...data, id }
-  await writeJSON(projectsFile(), projects)
+export async function updateProject(id: string, data: Project) {
+  await request('PUT', `/projects/${enc(id)}`, withoutEmptyStrings(data))
 }
 
 export async function deleteProject(id: string) {
-  const projects = await listProjects()
-  const filtered = projects.filter(p => p.id !== id)
-  if (filtered.length === projects.length) throw new Error('Project not found')
-  await writeJSON(projectsFile(), filtered)
-}
-function skillsFile() {
-  return path.join(DATA_PATH, 'skills.json')
+  await request('DELETE', `/projects/${enc(id)}`)
 }
 
 export async function listSections(): Promise<Section[]> {
-  return readJSON<Section[]>(skillsFile())
+  return request('GET', '/skills')
 }
 
 export async function createSection(section: Section) {
-  const sections = await listSections()
-  sections.push(section)
-  await writeJSON(skillsFile(), sections)
+  await request('POST', '/skills', section)
 }
 
 export async function updateSection(index: number, data: Partial<Section>) {
-  const sections = await listSections()
-  if (!sections[index]) throw new Error('Section not found')
-  sections[index] = { ...sections[index], ...data }
-  await writeJSON(skillsFile(), sections)
+  // Skills are managed through their own routes; the API refuses them here
+  await request('PATCH', `/skills/${index}`, { section: data.section, icon: data.icon })
 }
 
 export async function deleteSection(index: number) {
-  const sections = await listSections()
-  if (!sections[index]) throw new Error('Section not found')
-  sections.splice(index, 1)
-  await writeJSON(skillsFile(), sections)
+  await request('DELETE', `/skills/${index}`)
 }
 
 export async function createSkill(sectionIndex: number, skill: Skill) {
-  const sections = await listSections()
-  if (!sections[sectionIndex]) throw new Error('Section not found')
-  sections[sectionIndex].skills.push(skill)
-  await writeJSON(skillsFile(), sections)
+  await request('POST', `/skills/${sectionIndex}/skills`, skill)
 }
 
-export async function updateSkill(sectionIndex: number, skillId: string, data: Partial<Skill>) {
-  const sections = await listSections()
-  if (!sections[sectionIndex]) throw new Error('Section not found')
-  const idx = sections[sectionIndex].skills.findIndex(s => s.id === skillId)
-  if (idx === -1) throw new Error('Skill not found')
-  sections[sectionIndex].skills[idx] = { ...sections[sectionIndex].skills[idx], ...data, id: skillId }
-  await writeJSON(skillsFile(), sections)
+export async function updateSkill(sectionIndex: number, skillId: string, data: Skill) {
+  await request('PUT', `/skills/${sectionIndex}/skills/${enc(skillId)}`, data)
 }
 
 export async function deleteSkill(sectionIndex: number, skillId: string) {
-  const sections = await listSections()
-  if (!sections[sectionIndex]) throw new Error('Section not found')
-  const filtered = sections[sectionIndex].skills.filter(s => s.id !== skillId)
-  if (filtered.length === sections[sectionIndex].skills.length) throw new Error('Skill not found')
-  sections[sectionIndex].skills = filtered
-  await writeJSON(skillsFile(), sections)
+  await request('DELETE', `/skills/${sectionIndex}/skills/${enc(skillId)}`)
 }
 
 export const uploadImage = multer({

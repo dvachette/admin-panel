@@ -79,7 +79,9 @@ ADMIN_USER=<username>
 ADMIN_PASSWORD_HASH=<bcrypt_hash>
 JWT_SECRET=<long_random_string>
 NODE_ENV=production
-PORTFOLIO_DATA_PATH=<path_to_portfolio_data_directory>
+PORTFOLIO_API_URL=http://127.0.0.1:3003
+PORTFOLIO_API_TOKEN=<same_value_as_ADMIN_API_TOKEN_in_portfolio_backend>
+PORTFOLIO_IMAGES_PATH=<path_to_portfolio_project_images>
 ```
 
 Generate the password hash:
