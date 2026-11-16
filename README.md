@@ -175,6 +175,31 @@ sudo ln -s /etc/nginx/sites-available/admin-panel /etc/nginx/sites-enabled/
 sudo systemctl reload nginx
 ```
 
+## Local development
+
+The portfolio pages talk to the portfolio backend admin API. To work on them without it, run the
+in-memory mock of that API (`backend/dev/portfolio-mock.ts`, data reset on restart):
+
+```env
+# backend/.env (dev values)
+PORT=3000
+ADMIN_USER=admin
+ADMIN_PASSWORD_HASH=<bcrypt_hash>
+JWT_SECRET=dev-secret
+PORTFOLIO_API_TOKEN=dev-portfolio-token   # shared by the backend and the mock
+PORTFOLIO_IMAGES_PATH=<any_local_directory>
+```
+
+```bash
+cd backend && npm run mock:portfolio   # terminal 1 — mock on http://127.0.0.1:3003
+cd backend && npm run dev              # terminal 2 — backend on :3000
+cd frontend && npm run dev             # terminal 3 — frontend on http://localhost:3005
+```
+
+Mock options: `PORTFOLIO_MOCK_DATA_DIR=../../portfolio/portfolio-backend/data` seeds it with real
+`projects.json` / `skills.json`, `PORTFOLIO_MOCK_LATENCY_MS=500` adds a delay to every response,
+`PORTFOLIO_MOCK_PORT` changes its port (then set `PORTFOLIO_API_URL` accordingly).
+
 ## Automatic deployment (GitHub Actions)
 
 ### Required secrets
