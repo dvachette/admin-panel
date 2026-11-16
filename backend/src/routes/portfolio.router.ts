@@ -17,6 +17,16 @@ import {
   listImages,
   uploadImage,
   PortfolioApiError,
+  listExperiences,
+  createExperience,
+  updateExperience,
+  deleteExperience,
+  listInterests,
+  createInterest,
+  updateInterest,
+  deleteInterest,
+  type Experience,
+  type Interest,
 } from '../modules/portfolio.module'
 
 export const portfolioRouter = Router()
@@ -122,6 +132,76 @@ portfolioRouter.put('/sections/:index/skills/:id', async (req, res) => {
 portfolioRouter.delete('/sections/:index/skills/:id', async (req, res) => {
   try {
     await deleteSkill(parseInt(req.params.index), req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.get('/experiences', async (req, res) => {
+  try {
+    res.json(await listExperiences())
+  } catch (err) {
+    sendError(res, err, 'Failed to list experiences')
+  }
+})
+
+portfolioRouter.post('/experiences', async (req, res) => {
+  try {
+    await createExperience(req.body as Experience)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.put('/experiences/:id', async (req, res) => {
+  try {
+    await updateExperience(req.params.id, req.body as Experience)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.delete('/experiences/:id', async (req, res) => {
+  try {
+    await deleteExperience(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.get('/interests', async (req, res) => {
+  try {
+    res.json(await listInterests())
+  } catch (err) {
+    sendError(res, err, 'Failed to list interests')
+  }
+})
+
+portfolioRouter.post('/interests', async (req, res) => {
+  try {
+    await createInterest(req.body as Interest)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.put('/interests/:id', async (req, res) => {
+  try {
+    await updateInterest(req.params.id, req.body as Interest)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err, 'Portfolio API request failed')
+  }
+})
+
+portfolioRouter.delete('/interests/:id', async (req, res) => {
+  try {
+    await deleteInterest(req.params.id)
     res.json({ ok: true })
   } catch (err) {
     sendError(res, err, 'Portfolio API request failed')

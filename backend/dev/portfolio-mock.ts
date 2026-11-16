@@ -1,19 +1,20 @@
 /**
  * In-memory mock of the portfolio backend admin API (see portfolio-backend/openapi.yaml),
- * limited to the routes used by the admin panel: /admin/projects and /admin/skills.
+ * limited to the routes used by the admin panel: /admin/projects, /admin/skills, /admin/experiences
+ * and /admin/interests.
  *
  * Usage: npm run mock:portfolio, then npm run dev.
  *   The mock reads the same .env as the admin backend: leave PORTFOLIO_API_URL empty (defaults to
  *   http://127.0.0.1:3003) and PORTFOLIO_API_TOKEN is shared (defaults to "dev-portfolio-token").
  *
  * Data is reset on every restart. Set PORTFOLIO_MOCK_DATA_DIR to a directory containing
- * projects.json and skills.json (e.g. ../../portfolio/portfolio-backend/data) to seed from real data.
+ * projects.json, skills.json, experiences.json and interests.json (e.g. ../../portfolio/portfolio-backend/data) to seed from real data.
  */
 import 'dotenv/config'
 import fs from 'fs'
 import path from 'path'
 import express, { type NextFunction, type Request, type Response } from 'express'
-import type { Project, Section, Skill } from '../src/modules/portfolio.module'
+import type { Experience, Interest, Project, Section, Skill } from '../src/modules/portfolio.module'
 
 const PORT = Number(process.env.PORTFOLIO_MOCK_PORT || 3003)
 const MOCK_TOKEN = process.env.PORTFOLIO_API_TOKEN || 'dev-portfolio-token'
@@ -57,10 +58,48 @@ let projects: Project[] = [
   },
 ]
 
+let experiences: Experience[] = [
+  {
+    id: 'demo-internship',
+    type: 'internship',
+    title: 'Web developer intern',
+    organization: { name: 'Demo Corp', website: 'https://example.com', location: 'Lyon, France' },
+    startDate: '2026-04-07',
+    endDate: '2026-06-26',
+    workload: 'full-time',
+    highlights: ['Built a CRM module', 'Wrote tests'],
+    tags: ['CRM', 'Vue'],
+  },
+  {
+    id: 'demo-association',
+    type: 'association',
+    title: 'Treasurer',
+    organization: { name: 'Demo Association', location: 'Toulouse, France' },
+    startDate: '2025-09-01',
+    endDate: null,
+    workload: 'volunteer',
+    highlights: ['Managed the budget'],
+    tags: [],
+  },
+]
+
+let interests: Interest[] = [
+  {
+    id: 'open-source',
+    title: 'Open source',
+    icon: 'https://unpkg.com/lucide-static@0.460.0/icons/git-fork.svg',
+    description: 'Collaboration and knowledge sharing.',
+    tags: ['Debian', 'Linux'],
+  },
+]
+
 const seedDir = process.env.PORTFOLIO_MOCK_DATA_DIR
 if (seedDir) {
-  projects = JSON.parse(fs.readFileSync(path.join(seedDir, 'projects.json'), 'utf-8'))
-  sections = JSON.parse(fs.readFileSync(path.join(seedDir, 'skills.json'), 'utf-8'))
+  const load = (file: string) => JSON.parse(fs.readFileSync(path.join(seedDir, file), 'utf-8'))
+  projects = load('projects.json')
+  sections = load('skills.json')
+  experiences = load('experiences.json')
+  interests = load('interests.json')
 }
 
 // ------------------------------------------------------------------ helpers
@@ -229,6 +268,84 @@ admin.delete('/skills/:section/skills/:id', (req, res) => {
   section.skills.splice(idx, 1)
   res.status(204).end()
 })
+
+// ------------------------------------------------------------------ generic collections
+interface CollectionOptions {
+  required: string[]
+  validate?: (item: Record<string, unknown>) => void
+}
+
+function collectionRouter<T extends { id: string }>(name: string, getItems: () => T[], options: CollectionOptions) {
+  const router = express.Router()
+
+  const findIndex = (id: string) => {
+    const idx = getItems().findIndex(i => i.id === id)
+    if (idx === -1) throw new HttpError(404, `No item with id "${id}" in ${name}`)
+    return idx
+  }
+  const check = (item: Record<string, unknown>) => {
+    assertNoEmptyStrings(item)
+    assertRequired(item, options.required)
+    options.validate?.(item)
+  }
+
+  router.get('/', (_req, res) => {
+    res.json(getItems())
+  })
+  router.post('/', (req, res) => {
+    check(req.body)
+    assertRequired(req.body, ['id'])
+    if (getItems().some(i => i.id === req.body.id)) throw new HttpError(409, `An item with id "${req.body.id}" already exists in ${name}`)
+    getItems().push(req.body)
+    res.status(201).json(req.body)
+  })
+  router.get('/:id', (req, res) => {
+    res.json(getItems()[findIndex(req.params.id as string)])
+  })
+  router.put('/:id', (req, res) => {
+    const id = req.params.id as string
+    const idx = findIndex(id)
+    check(req.body)
+    getItems()[idx] = { ...req.body, id }
+    res.json(getItems()[idx])
+  })
+  router.patch('/:id', (req, res) => {
+    const id = req.params.id as string
+    const idx = findIndex(id)
+    assertNoEmptyStrings(req.body)
+    const merged: Record<string, unknown> = { ...getItems()[idx], ...req.body, id }
+    options.validate?.(merged)
+    getItems()[idx] = merged as unknown as T
+    res.json(merged)
+  })
+  router.delete('/:id', (req, res) => {
+    getItems().splice(findIndex(req.params.id as string), 1)
+    res.status(204).end()
+  })
+  return router
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function assertEnum(value: unknown, allowed: string[], field: string) {
+  if (!allowed.includes(value as string)) throw new HttpError(400, `body.${field} must be one of ${allowed.join(', ')}`)
+}
+
+admin.use(
+  '/experiences',
+  collectionRouter('experiences', () => experiences, {
+    required: ['type', 'title', 'organization', 'startDate', 'endDate', 'workload', 'highlights', 'tags'],
+    validate: item => {
+      assertEnum(item.type, ['job', 'internship', 'association'], 'type')
+      assertEnum(item.workload, ['full-time', 'part-time', 'volunteer'], 'workload')
+      if (!DATE_RE.test(item.startDate as string)) throw new HttpError(400, 'body.startDate must be a date formatted as YYYY-MM-DD')
+      if (item.endDate !== null && !DATE_RE.test(item.endDate as string)) throw new HttpError(400, 'body.endDate must be a date formatted as YYYY-MM-DD or null')
+      const org = item.organization as Record<string, unknown>
+      assertRequired(org, ['name', 'location'])
+    },
+  }),
+)
+admin.use('/interests', collectionRouter('interests', () => interests, { required: ['title', 'icon', 'description', 'tags'] }))
 
 // ------------------------------------------------------------------ app
 function requireToken(req: Request, res: Response, next: NextFunction) {
