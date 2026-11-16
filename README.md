@@ -50,7 +50,7 @@ On the server:
 - Bare-metal Nginx
 - Certbot with the nginx plugin, and the OVH DNS plugin for the wildcard certificate
   (`sudo apt install certbot python3-certbot-nginx python3-certbot-dns-ovh`)
-- A non-root sudoer user
+- A non-root sudoer user (deploys), and the `acl` package (`setfacl`)
 
 ## Installation
 
@@ -87,6 +87,8 @@ PORTFOLIO_API_URL=http://127.0.0.1:3003
 PORTFOLIO_API_TOKEN=<same_value_as_ADMIN_API_TOKEN_in_portfolio_backend>
 PORTFOLIO_IMAGES_PATH=<path_to_portfolio_project_images>
 CERTBOT_EMAIL=<email_for_lets_encrypt>   # optional, only used if certbot has no account yet
+DOCKER_HOST=tcp://127.0.0.1:2375         # filtering Docker socket proxy, set by deploy/install.sh
+PRIVILEGED_HELPER=/usr/local/sbin/admin-panel-helper   # optional, this is the default
 ```
 
 Generate the password hash:
@@ -94,46 +96,53 @@ Generate the password hash:
 node -e "require('bcrypt').hash('YOUR_PASSWORD', 10).then(console.log)"
 ```
 
-### 3. Systemd service
+### 3. Privileged setup (automated)
 
-Create `/etc/systemd/system/admin-backend.service`, replacing `<user>` and `<install_path>`:
-
-```ini
-[Unit]
-Description=Admin Panel Backend
-After=network.target
-
-[Service]
-Type=simple
-User=<user>
-WorkingDirectory=<install_path>/backend
-ExecStart=/usr/bin/node dist/index.js
-Restart=on-failure
-EnvironmentFile=<install_path>/backend/.env
-
-[Install]
-WantedBy=multi-user.target
-```
+[`deploy/install.sh`](deploy/install.sh) sets up everything that needs root. It is idempotent: the
+GitHub Actions workflow runs it after every build, and **it must be run once by hand** (it installs
+the sudoers rule that lets the workflow run it):
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable admin-backend
-sudo systemctl start admin-backend
+cd <install_path>/backend && npm install && npm run build   # .env must exist (step 2)
+sudo <install_path>/deploy/install.sh
 ```
 
-### 4. Sudoers
+What it does:
 
-Create `/etc/sudoers.d/admin-panel`, replacing `<user>` (check the binaries' paths with `which`):
+- **Dedicated user** `admin-backend`, which runs the backend: no shell, no general sudo, not in the
+  `docker` group, read-only ACLs on `backend/` and `.env` (`chmod 600`, owned by the deploy user),
+  read-write ACLs on `PORTFOLIO_IMAGES_PATH`. It cannot modify the code nor the scripts below.
+- **Privileged helper** [`deploy/admin-panel-helper`](deploy/admin-panel-helper), copied to
+  `/usr/local/sbin/admin-panel-helper` (root, 0755): everything the backend does as root (nginx,
+  vhost files, certbot, ufw) goes through its fixed sub-commands with validated arguments. Paths
+  are built by the script, certbot runs without hooks, nginx directives that open files as root
+  (`access_log`, `include`, `ssl_certificate`...) are restricted to nginx's and Let's Encrypt's
+  directories, and no ufw rule touching SSH (port 22) can be denied or deleted.
+- **Sudoers** `/etc/sudoers.d/admin-panel` (checked with `visudo` before being installed):
+  ```
+  admin-backend ALL=(root) NOPASSWD: /usr/local/sbin/admin-panel-helper
+  <deploy_user> ALL=(root) NOPASSWD: <install_path>/deploy/install.sh, /usr/bin/systemctl restart admin-backend
+  ```
+  It replaces the previous file, including its `rm`, `mv`, `ln`, `tee`, `chmod`, `certbot` entries
+  without arguments (sudo allows those with any argument, which is root access).
+- **systemd unit** `admin-backend.service` (`User=admin-backend`).
+- **Docker socket proxy** [`deploy/docker-socket-proxy`](deploy/docker-socket-proxy/compose.yaml) on
+  `127.0.0.1:2375`, and `DOCKER_HOST=tcp://127.0.0.1:2375` in `.env`. Access to the Docker socket
+  is root access (`docker run -v /:/host`): the proxy only forwards the calls the panel uses (list,
+  inspect, logs, stats, start/stop/restart, remove) and refuses the rest (container creation, exec,
+  images, volumes...) with a 403. Without `DOCKER_HOST`, the backend uses the socket directly
+  (local development).
+- **Restart** of the backend, failing with its last logs if it does not come up.
 
-```
-<user> ALL=(ALL) NOPASSWD: /usr/bin/systemctl start nginx, /usr/bin/systemctl stop nginx, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status nginx, /usr/bin/systemctl is-active nginx, /usr/bin/systemctl restart admin-backend, /usr/bin/ln, /usr/bin/rm, /usr/bin/tee, /usr/bin/mv, /usr/bin/chmod, /usr/sbin/nginx -t, /usr/bin/certbot
-```
+> **Trust model**: the deploy user may run `install.sh`, a file of the repository, as root. Pushing
+> to `master` or holding `VPS_SSH_KEY` is therefore root on the server; protect the branch and the
+> secret accordingly. A compromised backend is not: `admin-backend` cannot write to the repository.
+>
+> `admin-backend` gets a traverse (`--x`) ACL on the parents of `<install_path>` (e.g. a `0700`
+> home): it can read world-readable files there if it knows their name, not `0600` ones such as
+> SSH keys. Install under `/opt` to avoid it.
 
-```bash
-sudo visudo -f /etc/sudoers.d/admin-panel
-```
-
-### 4b. Wildcard certificate (OVH DNS, once)
+### 4. Wildcard certificate (OVH DNS, once)
 
 Let's Encrypt only issues wildcard certificates through a DNS challenge. Certbot creates the
 `_acme-challenge` TXT record through the OVH API, which also makes renewals automatic.
@@ -261,8 +270,12 @@ The corresponding public key must be present in `~/.ssh/authorized_keys` on the 
 
 ### Behavior
 
-Every push to `master` triggers deployment of both services in parallel:
-- **Backend**: `git pull` → `npm install` → `npm run build` → `systemctl restart`
-- **Frontend**: `git pull` → `docker compose up -d --build`
+Every push to `master` triggers the deployment (never two at the same time):
+- **Backend**: `git pull --ff-only` → `npm install` → `npm run build` → `sudo -n deploy/install.sh`
+  (privileged setup and restart, see Installation step 3)
+- **Frontend**, once the backend job is done (same checkout): `docker compose up -d --build`
+
+The first deployment fails with an explicit error until `sudo deploy/install.sh` has been run once
+on the server.
 
 > The SSH username and paths in the deployment script must be updated in `.github/workflows/deploy-admin.yml`.
