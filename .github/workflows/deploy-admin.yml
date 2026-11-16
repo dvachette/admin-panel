@@ -5,6 +5,11 @@ on:
     branches:
       - master
 
+# Never run two deployments at the same time (they share the same checkout on the server)
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: false
+
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
@@ -16,13 +21,22 @@ jobs:
           username: debian
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/debian/admin-panel/backend
-            git pull
+            set -euo pipefail
+            cd /home/debian/admin-panel
+            git pull --ff-only
+            cd backend
             npm install
             npm run build
-            sudo systemctl restart admin-backend
+            # Privileged setup (user, helper, sudoers, systemd unit, Docker socket proxy) + restart.
+            # -n: fail instead of waiting for a password if the server was never bootstrapped
+            sudo -n /home/debian/admin-panel/deploy/install.sh || {
+              echo "::error::install.sh not allowed by sudoers yet: run once on the server: sudo /home/debian/admin-panel/deploy/install.sh"
+              exit 1
+            }
 
   deploy-frontend:
+    # Same checkout as the backend job: wait for its git pull
+    needs: deploy-backend
     runs-on: ubuntu-latest
     steps:
       - name: Deploy frontend via SSH
@@ -32,6 +46,6 @@ jobs:
           username: debian
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd /home/debian/admin-panel/frontend
-            git pull
             docker compose up -d --build
