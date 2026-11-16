@@ -10,6 +10,11 @@ import TabPanel from 'primevue/tabpanel'
 import ProjectTable from '@/components/portfolio/ProjectTable.vue'
 import ProjectForm from '@/components/portfolio/ProjectForm.vue'
 import SkillsManager from '@/components/portfolio/SkillsManager.vue'
+import ExperienceTable from '@/components/portfolio/ExperienceTable.vue'
+import ExperienceForm from '@/components/portfolio/ExperienceForm.vue'
+import InterestTable from '@/components/portfolio/InterestTable.vue'
+import InterestForm from '@/components/portfolio/InterestForm.vue'
+import type { Experience, Interest } from '@/types/portfolioTypes'
 
 export interface SkillDetail {
   id: string
@@ -61,6 +66,107 @@ const showForm = ref(false)
 const editingProject = ref<Project | null>(null)
 
 const images = ref<string[]>([])
+
+const experiences = ref<Experience[]>([])
+const loadingExperiences = ref(false)
+const showExperienceForm = ref(false)
+const editingExperience = ref<Experience | null>(null)
+
+const interests = ref<Interest[]>([])
+const loadingInterests = ref(false)
+const showInterestForm = ref(false)
+const editingInterest = ref<Interest | null>(null)
+
+/** Error message returned by the backend (forwarded from the portfolio API), if any */
+function apiError(err: unknown, fallback: string): string {
+  return (axios.isAxiosError(err) && err.response?.data?.error) || fallback
+}
+
+async function fetchExperiences() {
+  loadingExperiences.value = true
+  try {
+    const { data } = await axios.get('/api/portfolio/experiences', { withCredentials: true })
+    experiences.value = data
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible de récupérer les expériences'), life: 3000 })
+  } finally {
+    loadingExperiences.value = false
+  }
+}
+
+async function saveExperience(experience: Experience, isEdit: boolean) {
+  try {
+    if (isEdit) {
+      await axios.put(`/api/portfolio/experiences/${encodeURIComponent(experience.id)}`, experience, { withCredentials: true })
+    } else {
+      await axios.post('/api/portfolio/experiences', experience, { withCredentials: true })
+    }
+    showExperienceForm.value = false
+    editingExperience.value = null
+    await fetchExperiences()
+    toast.add({ severity: 'success', summary: isEdit ? 'Modifié' : 'Créé', detail: isEdit ? 'Expérience modifiée' : 'Expérience créée', life: 2000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible d’enregistrer l’expérience'), life: 4000 })
+  }
+}
+
+async function deleteExperience(id: string) {
+  try {
+    await axios.delete(`/api/portfolio/experiences/${encodeURIComponent(id)}`, { withCredentials: true })
+    await fetchExperiences()
+    toast.add({ severity: 'success', summary: 'Supprimé', detail: 'Expérience supprimée', life: 2000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible de supprimer l’expérience'), life: 4000 })
+  }
+}
+
+function cancelExperience() {
+  showExperienceForm.value = false
+  editingExperience.value = null
+}
+
+async function fetchInterests() {
+  loadingInterests.value = true
+  try {
+    const { data } = await axios.get('/api/portfolio/interests', { withCredentials: true })
+    interests.value = data
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible de récupérer les centres d’intérêt'), life: 3000 })
+  } finally {
+    loadingInterests.value = false
+  }
+}
+
+async function saveInterest(interest: Interest, isEdit: boolean) {
+  try {
+    if (isEdit) {
+      await axios.put(`/api/portfolio/interests/${encodeURIComponent(interest.id)}`, interest, { withCredentials: true })
+    } else {
+      await axios.post('/api/portfolio/interests', interest, { withCredentials: true })
+    }
+    showInterestForm.value = false
+    editingInterest.value = null
+    await fetchInterests()
+    toast.add({ severity: 'success', summary: isEdit ? 'Modifié' : 'Créé', detail: isEdit ? 'Centre d’intérêt modifié' : 'Centre d’intérêt créé', life: 2000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible d’enregistrer le centre d’intérêt'), life: 4000 })
+  }
+}
+
+async function deleteInterest(id: string) {
+  try {
+    await axios.delete(`/api/portfolio/interests/${encodeURIComponent(id)}`, { withCredentials: true })
+    await fetchInterests()
+    toast.add({ severity: 'success', summary: 'Supprimé', detail: 'Centre d’intérêt supprimé', life: 2000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erreur', detail: apiError(err, 'Impossible de supprimer le centre d’intérêt'), life: 4000 })
+  }
+}
+
+function cancelInterest() {
+  showInterestForm.value = false
+  editingInterest.value = null
+}
 
 async function fetchImages() {
   try {
@@ -227,6 +333,8 @@ onMounted(() => {
   fetchProjects()
   fetchSections()
   fetchImages()
+  fetchExperiences()
+  fetchInterests()
 })
 </script>
 
@@ -237,6 +345,8 @@ onMounted(() => {
       <TabList>
         <Tab value="projects">Projets</Tab>
         <Tab value="ues">Compétences</Tab>
+        <Tab value="experiences">Expériences</Tab>
+        <Tab value="interests">Centres d’intérêt</Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="projects">
@@ -260,6 +370,24 @@ onMounted(() => {
             @delete-skill="handleDeleteSkill"
           />
 </TabPanel>
+        <TabPanel value="experiences">
+          <ExperienceTable
+            :experiences="experiences"
+            :loading="loadingExperiences"
+            @create="showExperienceForm = true"
+            @edit="(e) => (editingExperience = e)"
+            @delete="deleteExperience"
+          />
+        </TabPanel>
+        <TabPanel value="interests">
+          <InterestTable
+            :interests="interests"
+            :loading="loadingInterests"
+            @create="showInterestForm = true"
+            @edit="(i) => (editingInterest = i)"
+            @delete="deleteInterest"
+          />
+        </TabPanel>
       </TabPanels>
     </Tabs>
 
@@ -272,6 +400,24 @@ onMounted(() => {
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
       @cancel="handleCancel"
+    />
+
+    <ExperienceForm
+      v-if="showExperienceForm || editingExperience"
+      :experience="editingExperience"
+      :experiences="experiences"
+      @submit-create="(e) => saveExperience(e, false)"
+      @submit-update="(e) => saveExperience(e, true)"
+      @cancel="cancelExperience"
+    />
+
+    <InterestForm
+      v-if="showInterestForm || editingInterest"
+      :interest="editingInterest"
+      :interests="interests"
+      @submit-create="(i) => saveInterest(i, false)"
+      @submit-update="(i) => saveInterest(i, true)"
+      @cancel="cancelInterest"
     />
   </div>
 </template>

@@ -37,9 +37,13 @@ async function request<T>(method: string, route: string, body?: unknown): Promis
   return data as T
 }
 
-/** The portfolio API rejects empty strings: drop them so optional fields are simply omitted. */
+/** The portfolio API rejects empty strings: drop them (also in nested objects) so optional fields are simply omitted. */
 function withoutEmptyStrings<T extends object>(obj: T): T {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== '')) as T
+  return Object.fromEntries(
+    Object.entries(obj)
+      .filter(([, v]) => v !== '')
+      .map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) ? withoutEmptyStrings(v) : v]),
+  ) as T
 }
 
 const enc = encodeURIComponent
@@ -127,6 +131,64 @@ export async function updateSkill(sectionIndex: number, skillId: string, data: S
 
 export async function deleteSkill(sectionIndex: number, skillId: string) {
   await request('DELETE', `/skills/${sectionIndex}/skills/${enc(skillId)}`)
+}
+
+export interface Organization {
+  name: string
+  website?: string
+  location: string
+}
+
+export interface Experience {
+  id: string
+  type: 'job' | 'internship' | 'association'
+  title: string
+  organization: Organization
+  startDate: string
+  endDate: string | null
+  workload: 'full-time' | 'part-time' | 'volunteer'
+  highlights: string[]
+  tags: string[]
+}
+
+export interface Interest {
+  id: string
+  title: string
+  icon: string
+  description: string
+  tags: string[]
+}
+
+export async function listExperiences(): Promise<Experience[]> {
+  return request('GET', '/experiences')
+}
+
+export async function createExperience(experience: Experience) {
+  await request('POST', '/experiences', withoutEmptyStrings(experience))
+}
+
+export async function updateExperience(id: string, data: Experience) {
+  await request('PUT', `/experiences/${enc(id)}`, withoutEmptyStrings(data))
+}
+
+export async function deleteExperience(id: string) {
+  await request('DELETE', `/experiences/${enc(id)}`)
+}
+
+export async function listInterests(): Promise<Interest[]> {
+  return request('GET', '/interests')
+}
+
+export async function createInterest(interest: Interest) {
+  await request('POST', '/interests', withoutEmptyStrings(interest))
+}
+
+export async function updateInterest(id: string, data: Interest) {
+  await request('PUT', `/interests/${enc(id)}`, withoutEmptyStrings(data))
+}
+
+export async function deleteInterest(id: string) {
+  await request('DELETE', `/interests/${enc(id)}`)
 }
 
 export const uploadImage = multer({
