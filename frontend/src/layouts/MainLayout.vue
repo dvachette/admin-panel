@@ -13,8 +13,8 @@ const navItems = [
   { label: 'Nginx', icon: 'pi pi-server', to: '/nginx' },
   { label: 'Portfolio', icon: 'pi pi-briefcase', to: '/portfolio' },
 ]
-function logout() {
-  auth.logout()
+async function logout() {
+  await auth.logout()
   router.push('/login')
 }
 </script>
