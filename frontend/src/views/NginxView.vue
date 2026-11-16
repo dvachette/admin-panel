@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import axios from 'axios'
 import VhostEditForm from '@/components/nginx/VhostEditForm.vue'
-import type { Vhost, VhostUpdate, VhostUpdateResult } from '@/types/nginxTypes'
+import type {
+  Certificate,
+  Vhost,
+  VhostConfig,
+  VhostCreateResult,
+  VhostUpdate,
+  VhostUpdateResult,
+} from '@/types/nginxTypes'
 import { ref, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
@@ -17,6 +24,9 @@ const vhosts = ref<Vhost[]>([])
 const showForm = ref(false)
 const loading = ref(false)
 const editingVhost = ref<Vhost | null>(null)
+const certificates = ref<Certificate[]>([])
+const creating = ref(false)
+const securing = ref<string | null>(null)
 
 function errorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError<{ error?: string }>(error)) {
@@ -49,6 +59,45 @@ async function handleUpdate(name: string, update: VhostUpdate): Promise<void> {
     })
   }
 }
+async function fetchCertificates() {
+  try {
+    const { data } = await nginxService.getCertificates()
+    certificates.value = data
+  } catch (error: unknown) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Certificats',
+      detail: errorMessage(error, 'Impossible de lister les certificats'),
+      life: 5000,
+    })
+  }
+}
+
+async function handleSecure(name: string) {
+  securing.value = name
+  try {
+    const result = await nginxService.secureVhost(name)
+    await Promise.all([fetchVhosts(), fetchCertificates()])
+    toast.add({
+      severity: 'success',
+      summary: 'HTTPS',
+      detail: result.issued
+        ? `Nouveau certificat ${result.certName} émis et installé`
+        : `Certificat ${result.certName} installé`,
+      life: 4000,
+    })
+  } catch (error: unknown) {
+    toast.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: errorMessage(error, "Impossible d'installer le certificat"),
+      life: 10000,
+    })
+  } finally {
+    securing.value = null
+  }
+}
+
 async function fetchStatus() {
   const { data } = await nginxService.getStatus()
   status.value = data.status
@@ -155,25 +204,38 @@ async function handleDelete(name: string) {
   }
 }
 
-async function handleCreate(cfg: object) {
+async function handleCreate(cfg: VhostConfig) {
+  creating.value = true
   try {
-    await nginxService.createVhost(cfg)
+    const result: VhostCreateResult = await nginxService.createVhost(cfg)
     showForm.value = false
-    await fetchVhosts()
-    toast.add({ severity: 'success', summary: 'Créé', detail: 'Vhost créé', life: 2000 })
-  } catch {
+    await Promise.all([fetchVhosts(), cfg.ssl ? fetchCertificates() : Promise.resolve()])
+    if (result.warnings.length > 0) {
+      toast.add({ severity: 'warn', summary: 'Créé', detail: result.warnings.join(' | '), life: 10000 })
+    } else {
+      toast.add({
+        severity: 'success',
+        summary: 'Créé',
+        detail: result.secured ? 'Vhost créé et passé en HTTPS' : 'Vhost créé',
+        life: 3000,
+      })
+    }
+  } catch (error: unknown) {
     toast.add({
       severity: 'error',
       summary: 'Erreur',
-      detail: 'Impossible de créer le vhost',
-      life: 3000,
+      detail: errorMessage(error, 'Impossible de créer le vhost'),
+      life: 8000,
     })
+  } finally {
+    creating.value = false
   }
 }
 
 onMounted(() => {
   fetchStatus()
   fetchVhosts()
+  fetchCertificates()
 })
 </script>
 
@@ -213,16 +275,26 @@ onMounted(() => {
     <VhostTable
       :vhosts="vhosts"
       :loading="loading"
+      :certificates="certificates"
+      :securing="securing"
+      @secure="handleSecure"
       @enable="handleEnable"
       @disable="handleDisable"
       @delete="handleDelete"
       @edit="editingVhost = $event"
     />
 
-    <VhostForm v-if="showForm" @submit="handleCreate" @cancel="showForm = false" />
+    <VhostForm
+      v-if="showForm"
+      :certificates="certificates"
+      :submitting="creating"
+      @submit="handleCreate"
+      @cancel="showForm = false"
+    />
     <VhostEditForm
       v-if="editingVhost"
       :vhost="editingVhost"
+      :certificates="certificates"
       @submit="handleUpdate"
       @cancel="editingVhost = null"
     />

@@ -14,6 +14,8 @@ import {
     updateVhost,
     VhostUpdate,
     VhostError,
+    listCertificates,
+    secureVhost,
 } from '../modules/nginx.module'
 
 export const nginxRouter = Router()
@@ -65,10 +67,36 @@ nginxRouter.get('/vhosts', async (req, res) => {
 
 nginxRouter.post('/vhosts', async (req, res) => {
     try {
-        await createVhost(req.body as VhostConfig)
-        res.json({ ok: true })
-    } catch {
+        res.json(await createVhost(req.body as VhostConfig))
+    } catch (error: unknown) {
+        if (error instanceof VhostError) {
+            res.status(error.status).json({ error: error.message })
+            return
+        }
+        console.error(error)
         res.status(500).json({ error: 'Failed to create vhost' })
+    }
+})
+
+nginxRouter.get('/certificates', async (req, res) => {
+    try {
+        res.json(await listCertificates())
+    } catch (error: unknown) {
+        console.error(error)
+        res.status(500).json({ error: 'Failed to list certificates (certbot certificates)' })
+    }
+})
+
+nginxRouter.post('/vhosts/:name/certificate', async (req, res) => {
+    try {
+        res.json(await secureVhost(req.params.name))
+    } catch (error: unknown) {
+        if (error instanceof VhostError) {
+            res.status(error.status).json({ error: error.message })
+            return
+        }
+        console.error(error)
+        res.status(500).json({ error: 'Failed to install certificate' })
     }
 })
 

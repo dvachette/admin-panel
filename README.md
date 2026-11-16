@@ -21,7 +21,10 @@ VPS administration panel — Vue 3 + TypeScript + Express.
 - Start / stop / reload nginx
 - List virtual hosts (enabled / disabled)
 - Create a virtual host (proxy or static mode, with or without SSL)
+- Edit a virtual host (server name, proxy ports, root)
 - Enable / disable / delete a virtual host
+- HTTPS with certbot: installs the `*.dvachette.fr` wildcard certificate when it covers the domain,
+  otherwise requests a new certificate; shows certificate expiry per vhost
 
 ### Portfolio
 - List, create, edit and delete projects
@@ -45,7 +48,8 @@ On the server:
 - Node.js 18+
 - Docker + Docker Compose
 - Bare-metal Nginx
-- Certbot
+- Certbot with the nginx plugin, and the OVH DNS plugin for the wildcard certificate
+  (`sudo apt install certbot python3-certbot-nginx python3-certbot-dns-ovh`)
 - A non-root sudoer user
 
 ## Installation
@@ -82,6 +86,7 @@ NODE_ENV=production
 PORTFOLIO_API_URL=http://127.0.0.1:3003
 PORTFOLIO_API_TOKEN=<same_value_as_ADMIN_API_TOKEN_in_portfolio_backend>
 PORTFOLIO_IMAGES_PATH=<path_to_portfolio_project_images>
+CERTBOT_EMAIL=<email_for_lets_encrypt>   # optional, only used if certbot has no account yet
 ```
 
 Generate the password hash:
@@ -118,15 +123,56 @@ sudo systemctl start admin-backend
 
 ### 4. Sudoers
 
-Create `/etc/sudoers.d/admin-panel`, replacing `<user>`:
+Create `/etc/sudoers.d/admin-panel`, replacing `<user>` (check the binaries' paths with `which`):
 
 ```
-<user> ALL=(ALL) NOPASSWD: /usr/bin/systemctl start nginx, /usr/bin/systemctl stop nginx, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status nginx, /usr/bin/systemctl is-active nginx, /usr/bin/systemctl restart admin-backend, /usr/bin/ln, /usr/bin/rm, /usr/bin/tee
+<user> ALL=(ALL) NOPASSWD: /usr/bin/systemctl start nginx, /usr/bin/systemctl stop nginx, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status nginx, /usr/bin/systemctl is-active nginx, /usr/bin/systemctl restart admin-backend, /usr/bin/ln, /usr/bin/rm, /usr/bin/tee, /usr/bin/mv, /usr/bin/chmod, /usr/sbin/nginx -t, /usr/bin/certbot
 ```
 
 ```bash
 sudo visudo -f /etc/sudoers.d/admin-panel
 ```
+
+### 4b. Wildcard certificate (OVH DNS, once)
+
+Let's Encrypt only issues wildcard certificates through a DNS challenge. Certbot creates the
+`_acme-challenge` TXT record through the OVH API, which also makes renewals automatic.
+
+1. Create an API token on https://eu.api.ovh.com/createToken/ restricted to the zone:
+   `GET /domain/zone/*`, and `GET`, `PUT`, `POST`, `DELETE` on `/domain/zone/dvachette.fr/*`.
+2. Store the credentials, readable by root only:
+
+   ```bash
+   sudo mkdir -p /root/.secrets/certbot
+   sudo tee /root/.secrets/certbot/ovh.ini > /dev/null <<'INI'
+   dns_ovh_endpoint = ovh-eu
+   dns_ovh_application_key = <application_key>
+   dns_ovh_application_secret = <application_secret>
+   dns_ovh_consumer_key = <consumer_key>
+   INI
+   sudo chmod 600 /root/.secrets/certbot/ovh.ini
+   ```
+
+3. Issue the certificate (covers `dvachette.fr` and one level of subdomains, not `a.b.dvachette.fr`):
+
+   ```bash
+   sudo certbot certonly --dns-ovh \
+     --dns-ovh-credentials /root/.secrets/certbot/ovh.ini \
+     --dns-ovh-propagation-seconds 60 \
+     --cert-name dvachette.fr -d dvachette.fr -d '*.dvachette.fr' \
+     --deploy-hook 'systemctl reload nginx'
+   ```
+
+   If a `dvachette.fr` certificate already exists, certbot asks to replace its domain list: accept.
+   Renewal runs through certbot's systemd timer (`systemctl list-timers | grep certbot`) and
+   reloads nginx thanks to the deploy hook; test it with `sudo certbot renew --dry-run`.
+
+4. Existing vhosts: use the lock button in the panel to point each one to the wildcard certificate.
+   Old per-domain certificates can then be removed with `sudo certbot delete --cert-name <name>`.
+
+From the panel, creating a vhost with SSL writes an HTTP vhost, enables it, then runs
+`certbot install --nginx` with the wildcard (or `certbot --nginx` for a domain it does not cover),
+which adds the 443 block and the HTTP → HTTPS redirect.
 
 ### 5. Frontend
 

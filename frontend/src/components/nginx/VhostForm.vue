@@ -6,7 +6,14 @@ import InputNumber from 'primevue/inputnumber'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Button from 'primevue/button'
-import type { VhostConfig } from '@/types/nginxTypes'
+import Message from 'primevue/message'
+import { findCoveringCertificate, type Certificate, type VhostConfig } from '@/types/nginxTypes'
+
+const props = defineProps<{
+  certificates: Certificate[]
+  /** Creation in progress (certbot can take a while) */
+  submitting: boolean
+}>()
 
 const emit = defineEmits<{
   submit: [cfg: VhostConfig]
@@ -34,8 +41,13 @@ const valid = computed(() => {
   return true
 })
 
+const coveringCert = computed<Certificate | null>(() => {
+  const host = form.value.serverName.trim()
+  return host ? findCoveringCertificate(props.certificates, host) : null
+})
+
 function handleSubmit() {
-  if (!valid.value) return
+  if (!valid.value || props.submitting) return
   const serverName: string = form.value.serverName.trim()
   emit('submit', { ...form.value, serverName, name: serverName })
 }
@@ -80,11 +92,22 @@ function handleSubmit() {
         <label>SSL (Certbot)</label>
         <ToggleSwitch v-model="form.ssl" />
       </div>
+      <template v-if="form.ssl && form.serverName.trim()">
+        <Message v-if="coveringCert" severity="success" size="small" :closable="false">
+          Couvert par le certificat {{ coveringCert.name }} ({{ coveringCert.domains.join(', ') }}) :
+          certbot l'installera sur le vhost.
+        </Message>
+        <Message v-else severity="warn" size="small" :closable="false">
+          Aucun certificat ne couvre ce domaine : certbot en demandera un nouveau. Le DNS doit déjà
+          pointer vers ce serveur.
+        </Message>
+        <small class="hint">Le vhost sera activé en HTTP, puis certbot ajoutera HTTPS et la redirection.</small>
+      </template>
     </div>
 
     <template #footer>
-      <Button label="Annuler" text @click="emit('cancel')" />
-      <Button label="Créer" :disabled="!valid" @click="handleSubmit" />
+      <Button label="Annuler" text :disabled="submitting" @click="emit('cancel')" />
+      <Button label="Créer" :disabled="!valid" :loading="submitting" @click="handleSubmit" />
     </template>
   </Dialog>
 </template>
@@ -106,6 +129,11 @@ function handleSubmit() {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+}
+
+.hint {
+  color: var(--p-surface-400);
+  margin-top: -0.5rem;
 }
 
 label {
