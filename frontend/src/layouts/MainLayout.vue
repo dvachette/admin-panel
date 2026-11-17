@@ -9,6 +9,7 @@ const auth = useAuthStore()
 const collapsed = ref(false)
 
 const navItems = [
+  { label: 'Dashboard', icon: 'pi pi-gauge', to: '/dashboard' },
   { label: 'Docker', icon: 'pi pi-box', to: '/docker' },
   { label: 'Nginx', icon: 'pi pi-server', to: '/nginx' },
   { label: 'Portfolio', icon: 'pi pi-briefcase', to: '/portfolio' },
