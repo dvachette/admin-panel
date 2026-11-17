@@ -1,9 +1,10 @@
 name: Deploy admin panel
 
+# Deploy releases only: push a version tag (git tag v1.2.0 && git push origin v1.2.0)
 on:
   push:
-    branches:
-      - master
+    tags:
+      - 'v*.*.*'
 
 # Never run two deployments at the same time (they share the same checkout on the server)
 concurrency:
@@ -13,6 +14,8 @@ concurrency:
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_TAG: ${{ github.ref_name }}
     steps:
       - name: Deploy backend via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -20,10 +23,18 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: debian
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DEPLOY_TAG
           script: |
             set -euo pipefail
+            [[ "$DEPLOY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid tag: $DEPLOY_TAG"; exit 1; }
             cd /home/debian/admin-panel
-            git pull --ff-only
+            git fetch --force --tags origin master
+            # Only release commits that are part of master
+            git merge-base --is-ancestor "refs/tags/$DEPLOY_TAG" origin/master || {
+              echo "::error::$DEPLOY_TAG is not on master"
+              exit 1
+            }
+            git checkout --detach "refs/tags/$DEPLOY_TAG"
             cd backend
             npm install
             npm run build
@@ -35,7 +46,7 @@ jobs:
             }
 
   deploy-frontend:
-    # Same checkout as the backend job: wait for its git pull
+    # Same checkout as the backend job: wait for its checkout
     needs: deploy-backend
     runs-on: ubuntu-latest
     steps:
