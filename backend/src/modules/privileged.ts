@@ -8,6 +8,12 @@ export const HELPER_PATH: string = process.env.PRIVILEGED_HELPER || '/usr/local/
 
 const DEFAULT_TIMEOUT_MS: number = 30_000
 
+/**
+ * Local development only: PRIVILEGED_HELPER_SUDO=false runs the helper without sudo, e.g. the fake
+ * one (PRIVILEGED_HELPER=dev/fake-helper.sh). Ignored in production.
+ */
+const USE_SUDO: boolean = process.env.NODE_ENV === 'production' || process.env.PRIVILEGED_HELPER_SUDO !== 'false'
+
 export interface HelperResult {
     stdout: string
     stderr: string
@@ -30,7 +36,9 @@ export interface HelperOptions {
 export function runHelper(args: string[], options: HelperOptions = {}): Promise<HelperResult> {
     return new Promise((resolve, reject) => {
         // -n: fail instead of waiting for a password if sudoers is not set up
-        const child = spawn('sudo', ['-n', HELPER_PATH, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+        const child = USE_SUDO
+            ? spawn('sudo', ['-n', HELPER_PATH, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+            : spawn(HELPER_PATH, args, { stdio: ['pipe', 'pipe', 'pipe'] })
         let stdout = ''
         let stderr = ''
         const timer = setTimeout(() => child.kill('SIGTERM'), options.timeoutMs ?? DEFAULT_TIMEOUT_MS)

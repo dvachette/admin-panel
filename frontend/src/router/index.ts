@@ -17,7 +17,12 @@ const router = createRouter({
       children: [
         {
           path: '',
-          redirect: '/docker',
+          redirect: '/dashboard',
+        },
+        {
+          path: 'dashboard',
+          name: 'dashboard',
+          component: () => import('@/views/DashboardView.vue'),
         },
         {
           path: 'docker',

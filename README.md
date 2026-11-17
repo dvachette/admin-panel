@@ -11,6 +11,14 @@ VPS administration panel — Vue 3 + TypeScript + Express.
 
 ## Features
 
+### Dashboard
+- Live CPU, memory, network (5 min sparklines), load, disks, uptime
+- Containers (running, unhealthy, crashed, exposed ports), nginx status, next certificate expiry
+- ufw: status, default policies, rules (IPv4 and IPv6 grouped), add / delete; SSH rules cannot be
+  denied or deleted from the panel
+- Reachable ports: what actually listens on the server, crossed with ufw and Docker (published
+  ports bypass ufw)
+
 ### Docker
 - List containers (name, image, state, status, ports)
 - Start / stop / remove a container
@@ -251,6 +259,14 @@ cd backend && npm run dev              # terminal 2 — backend on :3000
 cd frontend && npm run dev             # terminal 3 — frontend on http://localhost:3005
 ```
 
+Nginx, certbot and ufw go through the privileged helper; locally, use the fake one (no root, ufw
+rules kept in a temporary file):
+
+```env
+PRIVILEGED_HELPER=dev/fake-helper.sh
+PRIVILEGED_HELPER_SUDO=false   # ignored when NODE_ENV=production
+```
+
 Mock options: `PORTFOLIO_MOCK_DATA_DIR=../../portfolio/portfolio-backend/data` seeds it with real
 `projects.json` / `skills.json`, `PORTFOLIO_MOCK_LATENCY_MS=500` adds a delay to every response,
 `PORTFOLIO_MOCK_PORT` changes its port (then set `PORTFOLIO_API_URL` accordingly).
@@ -270,8 +286,14 @@ The corresponding public key must be present in `~/.ssh/authorized_keys` on the 
 
 ### Behavior
 
-Every push to `master` triggers the deployment (never two at the same time):
-- **Backend**: `git pull --ff-only` → `npm install` → `npm run build` → `sudo -n deploy/install.sh`
+Pushing a version tag `vX.Y.Z` triggers the deployment (never two at the same time); pushes to
+`master` deploy nothing:
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+- **Backend**: the server checks out the tag (refused if the tagged commit is not on `master`) → `npm install` → `npm run build` → `sudo -n deploy/install.sh`
   (privileged setup and restart, see Installation step 3)
 - **Frontend**, once the backend job is done (same checkout): `docker compose up -d --build`
 
